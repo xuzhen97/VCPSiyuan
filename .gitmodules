@@ -7,3 +7,6 @@
 [submodule "examples/VCPToolBox"]
 	path = examples/VCPToolBox
 	url = https://github.com/lioensky/VCPToolBox.git
+[submodule "examples/VCPChat"]
+	path = examples/VCPChat
+	url = https://github.com/lioensky/VCPChat.git
