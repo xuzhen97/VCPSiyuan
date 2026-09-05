@@ -10,3 +10,6 @@
 [submodule "examples/VCPChat"]
 	path = examples/VCPChat
 	url = https://github.com/lioensky/VCPChat.git
+[submodule "examples/VikunjaDev"]
+	path = examples/VikunjaDev
+	url = https://github.com/xuzhen97/VikunjaDev.git
