@@ -4,3 +4,6 @@
 [submodule "examples/plugin-sample"]
 	path = examples/plugin-sample
 	url = https://github.com/siyuan-note/plugin-sample.git
+[submodule "examples/VCPToolBox"]
+	path = examples/VCPToolBox
+	url = https://github.com/lioensky/VCPToolBox.git
