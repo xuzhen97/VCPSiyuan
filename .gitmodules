@@ -1,3 +1,6 @@
 [submodule "examples/siyuan"]
 	path = examples/siyuan
 	url = https://github.com/siyuan-note/siyuan.git
+[submodule "examples/plugin-sample"]
+	path = examples/plugin-sample
+	url = https://github.com/siyuan-note/plugin-sample.git
