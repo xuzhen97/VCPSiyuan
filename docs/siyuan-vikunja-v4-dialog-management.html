@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SiYuan × Vikunja V4 Prototype</title>
+<style>
+:root{
+  --app:#f2f2f1;--paper:#fff;--panel:#fafafa;--line:#dededb;--line2:#ecece9;
+  --text:#343532;--muted:#8e908a;--hover:#eeeeeb;--soft:#f3f3f0;
+  --green:#2e9b7d;--green-soft:#e8f4f0;--red:#c55e54;--red-soft:#faecea;
+  --orange:#b77b3c;--orange-soft:#f7eee3;--blue:#657f94;--blue-soft:#edf1f4;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#ddd;color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+button,input,textarea,select{font:inherit;color:inherit}
+.app{height:100vh;min-width:1240px;min-height:760px;background:var(--app);display:grid;grid-template-rows:42px 1fr}
+.top{border-bottom:1px solid #d2d2cf;display:grid;grid-template-columns:420px 1fr 420px;align-items:center;padding:0 10px;font-size:12px}
+.lefttop,.righttop{display:flex;align-items:center;gap:11px}.righttop{justify-content:flex-end}
+.brand{background:#ef6b58;color:white;border-radius:16px;padding:6px 12px;font-weight:700}
+.tabs{height:100%;display:flex;justify-content:center;align-items:end}.tab{padding:9px 15px 8px;border-radius:8px 8px 0 0;color:#777}.tab.active{background:#fafafa;color:#444}
+.layout{display:grid;grid-template-columns:50px 410px minmax(500px,1fr) 650px 48px;min-height:0}
+.rail,.rrail{background:#efefee;padding:8px 5px;display:flex;flex-direction:column;align-items:center;gap:9px;border-right:1px solid #ddd}
+.rrail{border-left:1px solid #ddd;border-right:0}
+.rail button,.rrail button{width:34px;height:34px;border:0;border-radius:8px;background:transparent;cursor:pointer;color:#777}
+.rail button:hover,.rrail button:hover,.rail .active,.rrail .active{background:#dededb;color:#333}
+.tree{background:#f6f6f5;border-right:1px solid #ddd;padding:8px 10px;overflow:auto}
+.tt{font-weight:700;padding:6px 8px 12px}.tr{height:31px;display:flex;align-items:center;padding:0 10px;border-radius:8px;font-size:13px}.tr:hover,.tr.sel{background:#e7e7e4}.indent{margin-left:20px}
+.center{background:#fff;border-right:1px solid #ddd;overflow:auto}
+.edhead{height:40px;border-bottom:1px solid #efefed;padding:0 16px;display:flex;align-items:center;justify-content:space-between;color:#888;font-size:13px}
+.editor{max-width:760px;margin:0 auto;padding:68px 46px 130px}h1{font-size:39px;margin:0 0 30px}.hint{color:#9c9d99;border-left:2px solid #ddd;padding-left:8px}
+p{font-size:15px;line-height:1.85;color:#555}
+.inline{display:flex;align-items:center;gap:9px;padding:7px 6px;margin:6px -6px;border-radius:7px;cursor:pointer}.inline:hover{background:#f8f8f5}
+.check{width:17px;height:17px;border:1.4px solid #92948f;border-radius:4px;background:#fff;display:grid;place-items:center;flex:none;font-size:11px}.check.done{background:var(--green);border-color:var(--green);color:white}
+.inline .title{flex:1;font-size:14px}.pill{font-size:10px;padding:2px 6px;border-radius:999px;background:#f0f0ed;color:#737570}.p2{background:var(--orange-soft);color:var(--orange)}.due{background:var(--blue-soft);color:var(--blue)}
+
+/* Dock */
+.dock{background:#fafafa;display:flex;flex-direction:column;min-width:0}
+.dockhead{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:8px}
+.logo{width:20px;height:20px;border-radius:5px;background:var(--green);color:white;display:grid;place-items:center;font-size:12px}
+.dtitle{font-weight:750;font-size:15px;flex:1}
+.icon{width:29px;height:29px;border:0;background:transparent;border-radius:6px;cursor:pointer}.icon:hover{background:var(--hover)}
+.primarynav{padding:9px 10px;border-bottom:1px solid var(--line2)}
+.navrow{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.nav{border:0;background:transparent;border-radius:8px;padding:8px 6px;cursor:pointer;font-size:12px;color:#747570}.nav.active{background:#e6ebe8;color:#315f51;font-weight:700}.nav:hover{background:#ededeb}
+.toolbar{padding:8px 10px;border-bottom:1px solid var(--line2);display:flex;align-items:center;gap:6px}
+.scope{font-size:10px;border:1px solid #ddd;background:white;border-radius:999px;padding:5px 8px;cursor:pointer}.scope.active{background:#eef3f0;border-color:#d4e2db;color:#476a5e}
+.toolbar .spacer{flex:1}
+.newbtn{border:0;background:#3e403d;color:white;border-radius:7px;padding:6px 10px;font-size:11px;cursor:pointer}
+.listhead{height:35px;border-bottom:1px solid var(--line2);display:flex;align-items:center;padding:0 12px;font-size:10px;color:#888}.listhead b{flex:1;color:#777}
+.scroll{overflow:auto;flex:1;padding:5px 8px 18px}
+.group{display:flex;align-items:center;gap:7px;padding:13px 7px 6px;font-size:10px;font-weight:750;color:#81837e}.group .num{font-weight:500;color:#aaa}.group .line{height:1px;background:#e7e7e4;flex:1}
+.task{display:grid;grid-template-columns:19px 1fr auto;gap:9px;padding:9px 7px;border-radius:8px;cursor:pointer;position:relative}.task:hover{background:#efefec}.task.overdue{background:linear-gradient(90deg,var(--red-soft),transparent 70%)}
+.taskmain{min-width:0}.tasktitle{font-size:13px;line-height:1.4;margin-bottom:5px}.meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;color:#92948e;font-size:10px}.sep{width:3px;height:3px;background:#bbb;border-radius:50%}.over{color:var(--red);font-weight:650}.proj{color:#687c6f}
+.prio{width:4px;height:22px;border-radius:4px;background:#d4d4d1}.prio.high{background:#d77a6d}.prio.med{background:#d8a05c}
+.hover{display:none;position:absolute;right:7px;top:7px;gap:2px}.task:hover .hover{display:flex}.hover button{width:26px;height:26px;border:1px solid #e1e1dd;background:white;border-radius:5px;cursor:pointer}
+.foot{height:39px;border-top:1px solid var(--line);display:flex;align-items:center;padding:0 10px;font-size:10px;color:#8c8d88}.foot span:first-child{flex:1}
+
+/* manage panel */
+.manage{display:none;flex:1;min-height:0;flex-direction:column}.manage.show{display:flex}
+.subhead{height:42px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 9px;gap:7px}.subhead .title{font-weight:700;font-size:13px;flex:1}.back{border:0;background:transparent;border-radius:6px;padding:6px 8px;cursor:pointer}.back:hover{background:var(--hover)}
+.managebody{padding:12px;overflow:auto}.manage-tabs{display:flex;gap:4px;margin-bottom:12px}.manage-tabs button{border:0;background:transparent;border-radius:7px;padding:7px 10px;font-size:11px;cursor:pointer}.manage-tabs button.active{background:#e8e8e5;font-weight:700}
+.manage-row{display:flex;align-items:center;gap:9px;padding:9px;border-radius:8px}.manage-row:hover{background:#efefec}.color-dot{width:10px;height:10px;border-radius:50%;background:#6e8c77}.manage-row .name{flex:1;font-size:12px}.small{font-size:10px;color:#999}.m-actions{display:flex;gap:4px}.m-actions button{border:0;background:transparent;cursor:pointer;color:#777}
+.add-manage{width:100%;border:1px dashed #d2d2cd;background:#fafaf8;border-radius:8px;padding:9px;color:#777;font-size:11px;cursor:pointer;margin-top:8px}
+
+/* detail */
+.detail{display:none;flex:1;min-height:0;flex-direction:column}.detail.show{display:flex}
+.detailbody{padding:16px 18px 60px;overflow:auto}.dtitle{display:flex;gap:9px;align-items:flex-start}.dtitle h2{font-size:18px;margin:0;line-height:1.4}.statusline{display:flex;gap:5px;flex-wrap:wrap;margin:12px 0 18px}
+.props{display:grid;grid-template-columns:95px 1fr;gap:11px;font-size:12px}.k{color:#999}.section{border-top:1px solid var(--line2);margin-top:18px;padding-top:14px}.section h3{font-size:11px;margin:0 0 8px}
+.attachment{display:flex;align-items:center;gap:8px;border:1px solid #e3e3de;background:#fff;border-radius:8px;padding:9px;margin:6px 0}.atticon{width:30px;height:30px;border-radius:7px;background:#eef1f3;display:grid;place-items:center}.attmain{flex:1}.attmain b{display:block;font-size:11px}.attmain span{font-size:10px;color:#999}
+.ctx{padding:9px;background:#f3f3f0;border-radius:7px;margin:6px 0}.ctx b{font-size:11px}.ctx div{font-size:10px;color:#92938f;margin-top:4px}
+.comment{padding:9px;background:#f5f5f2;border-radius:7px;font-size:11px;line-height:1.55}
+
+/* Dialog */
+.overlay{position:fixed;inset:0;background:rgba(30,31,29,.28);z-index:100;display:none;align-items:center;justify-content:center}.overlay.show{display:flex}
+.dialog{width:680px;max-height:84vh;background:white;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.2);display:flex;flex-direction:column;overflow:hidden}
+.dialoghead{height:48px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 16px}.dialoghead b{flex:1;font-size:14px}.close{border:0;background:transparent;border-radius:6px;width:30px;height:30px;cursor:pointer}.close:hover{background:var(--hover)}
+.dialogbody{padding:16px 18px 8px;overflow:auto}.field{margin-bottom:13px}.field label{display:block;font-size:10px;color:#888;margin-bottom:5px}.field input,.field textarea,.field select{width:100%;border:1px solid #dcdcd8;background:white;border-radius:7px;padding:8px 9px;outline:none}.field textarea{min-height:88px;resize:vertical}.field input:focus,.field textarea:focus,.field select:focus{border-color:#9bad9f;box-shadow:0 0 0 2px #edf3ef}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.dialogsection{font-size:10px;font-weight:750;color:#777;margin:16px 0 8px;padding-top:12px;border-top:1px solid #eee}
+.attach-drop{border:1px dashed #cfcfc9;border-radius:8px;padding:16px;text-align:center;color:#8b8d87;font-size:11px;background:#fafaf8;cursor:pointer}
+.attach-list{margin-top:8px}.dialogfoot{height:54px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:0 16px}.btn{border:0;border-radius:7px;padding:8px 12px;cursor:pointer}.btn.gray{background:#eeeeeb}.btn.primary{background:#3e403d;color:white}
+.linkbtn{border:0;background:transparent;color:#537368;font-size:11px;cursor:pointer;padding:0}
+
+/* manager dialog */
+.manager-dialog{width:620px}.manager-tabs2{display:flex;gap:4px;padding:10px 16px 0}.manager-tabs2 button{border:0;background:transparent;border-radius:7px;padding:7px 10px;cursor:pointer;font-size:11px}.manager-tabs2 button.active{background:#ecece9;font-weight:700}
+.manager-list{padding:8px 16px 16px}.manager-item{display:flex;align-items:center;gap:9px;padding:9px 7px;border-bottom:1px solid #eee}.manager-item .grow{flex:1}.manager-item b{font-size:12px}.manager-item span{font-size:10px;color:#999}.manager-item button{border:0;background:transparent;cursor:pointer;color:#777}
+
+.legend{position:fixed;left:68px;bottom:13px;background:#30312f;color:white;padding:7px 9px;border-radius:7px;font-size:10px;opacity:.87;z-index:120}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="lefttop"><span class="brand">SiYuan⌄</span><span>☁</span><span>←</span><span>→</span><span>▣</span></div>
+    <div class="tabs"><div class="tab">📄 2026-09-11</div><div class="tab active">📄 daily note　×</div><div class="tab">📄 2026-09-12</div><div class="tab">＋</div></div>
+    <div class="righttop"><span>♔</span><span>⚙</span><span>⌘</span><span>◫</span><span>⌕</span><span>☾</span></div>
+  </div>
+  <div class="layout">
+    <aside class="rail"><button class="active">▣</button><button>☰</button><button>⌑</button><button>◇</button><button>⌘</button><button>≡</button></aside>
+    <aside class="tree">
+      <div class="tt">文档</div><div class="tr">⌄　📘 时缝的知识库</div><div class="tr indent">⌄　▣ 认知驾驶舱</div><div class="tr indent">⌄　🤖 人工智能</div><div class="tr indent">⌄　📄 系统架构设计</div><div class="tr indent">⌄　📄 光缆运维系统</div><div class="tr indent">⌄　📄 deepseek harness</div><div class="tr indent sel">⌄　📄 daily note</div>
+    </aside>
+    <main class="center">
+      <div class="edhead"><span>📄　›　¶</span><span>⌘　♙　▱　⋮</span></div>
+      <div class="editor">
+        <h1>daily note</h1><p class="hint">写点什么，或按下 '/' 查看命令</p>
+        <p style="margin-top:44px">今天继续完善 SiYuan × Vikunja 插件。任务创建和编辑使用 Dialog，项目、标签作为可管理对象，附件属于任务的一等能力。</p>
+        <div class="inline" onclick="openDetail('完成 V4 任务管理原型')"><span class="check"></span><span class="title">完成 V4 任务管理原型</span><span class="pill p2">P2</span><span class="pill due">今天</span></div>
+        <div class="inline" onclick="openDetail('实现项目与标签管理')"><span class="check"></span><span class="title">实现项目与标签管理</span><span class="pill">Plugin</span></div>
+        <p>正文只保留轻量任务引用；完整编辑由 Dialog 承担，详情仍在右侧 Dock 查看。</p>
+      </div>
+    </main>
+
+    <aside class="dock">
+      <div id="listMode" style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div class="dockhead">
+          <div class="logo">✓</div><div class="dtitle">My Work</div>
+          <button class="icon" title="新建任务" onclick="openTaskDialog()">＋</button>
+          <button class="icon" title="管理项目与标签" onclick="openManager()">⚙</button>
+          <button class="icon" title="搜索">⌕</button>
+        </div>
+        <div class="primarynav"><div class="navrow"><button class="nav active">聚焦 6</button><button class="nav">收件箱 4</button><button class="nav">计划 12</button></div></div>
+        <div class="toolbar">
+          <button class="scope active">📄 当前笔记</button><button class="scope">👤 分配给我</button>
+          <span class="spacer"></span><button class="newbtn" onclick="openTaskDialog()">＋ 新建任务</button>
+        </div>
+        <div class="listhead"><b>今天要处理</b><span>按紧急程度　⋯</span></div>
+        <div class="scroll">
+          <div class="group"><span style="color:var(--red)">逾期</span><span class="num">2</span><span class="line"></span></div>
+          <div class="task overdue" onclick="openDetail('修复任务同步失败重试')">
+            <span class="check"></span><div class="taskmain"><div class="tasktitle">修复任务同步失败重试</div><div class="meta"><span class="over">逾期 2 天</span><span class="sep"></span><span class="proj">VCPDesk</span><span class="sep"></span><span>#开发</span><span>📎 2</span><span>💬 3</span></div></div><span class="prio high"></span>
+            <div class="hover"><button onclick="editFromRow(event,'修复任务同步失败重试')">✎</button></div>
+          </div>
+          <div class="task overdue" onclick="openDetail('确认 OTDR 告警调度规则')">
+            <span class="check"></span><div class="taskmain"><div class="tasktitle">确认 OTDR 告警调度规则</div><div class="meta"><span class="over">昨天</span><span class="sep"></span><span class="proj">OTDR</span><span class="sep"></span><span>👤 我</span><span>📎 1</span></div></div><span class="prio med"></span>
+            <div class="hover"><button onclick="editFromRow(event,'确认 OTDR 告警调度规则')">✎</button></div>
+          </div>
+
+          <div class="group"><span style="color:var(--orange)">今天</span><span class="num">3</span><span class="line"></span></div>
+          <div class="task" onclick="openDetail('完成 V4 任务管理原型')">
+            <span class="check"></span><div class="taskmain"><div class="tasktitle">完成 V4 任务管理原型</div><div class="meta"><span>21:00</span><span class="sep"></span><span class="proj">SiYuan Plugin</span><span class="sep"></span><span>#设计</span><span>📎 1</span></div></div><span class="prio med"></span>
+            <div class="hover"><button onclick="editFromRow(event,'完成 V4 任务管理原型')">✎</button></div>
+          </div>
+          <div class="task" onclick="openDetail('实现项目与标签管理')">
+            <span class="check"></span><div class="taskmain"><div class="tasktitle">实现项目与标签管理</div><div class="meta"><span class="proj">SiYuan Plugin</span><span class="sep"></span><span>#开发</span></div></div><span class="prio"></span>
+            <div class="hover"><button onclick="editFromRow(event,'实现项目与标签管理')">✎</button></div>
+          </div>
+        </div>
+        <div class="foot"><span>6 个待处理 · 2 个逾期</span><span>✓ 已完成 3</span></div>
+      </div>
+
+      <div class="detail" id="detail">
+        <div class="subhead"><button class="back" onclick="closeDetail()">←</button><div class="title">任务详情</div><button class="icon" onclick="openTaskDialog(true)">✎</button><button class="icon">⋯</button></div>
+        <div class="detailbody">
+          <div class="dtitle"><span class="check"></span><h2 id="detailTitle">完成 V4 任务管理原型</h2></div>
+          <div class="statusline"><span class="pill p2">P2</span><span class="pill due">今天 21:00</span><span class="pill">#设计</span></div>
+          <div class="props">
+            <div class="k">项目</div><div>SiYuan Plugin</div>
+            <div class="k">负责人</div><div>我</div>
+            <div class="k">截止</div><div>今天 21:00</div>
+            <div class="k">提醒</div><div>提前 1 小时</div>
+            <div class="k">重复</div><div>不重复</div>
+          </div>
+          <div class="section"><h3>描述</h3><div style="font-size:12px;line-height:1.65">任务的创建与编辑统一通过 Dialog；右侧详情用于查看和快速进入编辑，不在列表底部展开复杂表单。</div></div>
+          <div class="section"><h3>附件 · 2</h3>
+            <div class="attachment"><div class="atticon">📄</div><div class="attmain"><b>prototype-v4.html</b><span>184 KB · 今天 20:16</span></div><button class="icon">⋯</button></div>
+            <div class="attachment"><div class="atticon">🖼</div><div class="attmain"><b>siyuan-layout.png</b><span>412 KB · 今天 19:58</span></div><button class="icon">⋯</button></div>
+            <button class="linkbtn" onclick="openTaskDialog(true)">＋ 添加附件</button>
+          </div>
+          <div class="section"><h3>SiYuan 上下文</h3><div class="ctx"><b>daily note</b><div>“项目、标签作为可管理对象，附件属于任务的一等能力。”</div></div></div>
+          <div class="section"><h3>评论 · 2</h3><div class="comment">Dialog 适合完整字段编辑，Dock 详情负责阅读和快速跳转。</div></div>
+        </div>
+      </div>
+    </aside>
+
+    <aside class="rrail"><button>✎</button><button class="active">✓</button><button>🔗</button><button>♢</button></aside>
+  </div>
+</div>
+
+<!-- Task Dialog -->
+<div class="overlay" id="taskOverlay">
+  <div class="dialog">
+    <div class="dialoghead"><b id="dialogTitle">新建任务</b><button class="close" onclick="closeTaskDialog()">×</button></div>
+    <div class="dialogbody">
+      <div class="field"><label>任务标题</label><input id="taskTitleInput" value="完成 V4 任务管理原型"></div>
+      <div class="grid2">
+        <div class="field"><label>项目</label><select><option>SiYuan Plugin</option><option>VCPDesk</option><option>OTDR</option><option>Personal</option></select></div>
+        <div class="field"><label>负责人</label><select><option>我</option><option>未分配</option></select></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>开始时间</label><input value="今天 14:00"></div>
+        <div class="field"><label>截止时间</label><input value="今天 21:00"></div>
+        <div class="field"><label>优先级</label><select><option>P2</option><option>P1</option><option>P3</option><option>无</option></select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>标签</label><input value="设计, 插件"></div>
+        <div class="field"><label>重复</label><select><option>不重复</option><option>每天</option><option>每周</option><option>自定义...</option></select></div>
+      </div>
+      <div class="field"><label>描述</label><textarea>任务的创建与编辑统一通过 Dialog；项目、标签、附件均为正式的一等能力。</textarea></div>
+
+      <div class="dialogsection">附件</div>
+      <div class="attach-drop" onclick="fakeAttach()">拖拽文件到这里，或点击选择文件<br><span style="font-size:10px;color:#aaa">支持 Vikunja Task Attachments</span></div>
+      <div class="attach-list" id="attachList">
+        <div class="attachment"><div class="atticon">📄</div><div class="attmain"><b>prototype-v4.html</b><span>184 KB</span></div><button class="icon">×</button></div>
+      </div>
+
+      <div class="dialogsection">高级</div>
+      <div class="grid2">
+        <div class="field"><label>提醒</label><select><option>提前 1 小时</option><option>提前 1 天</option><option>不提醒</option></select></div>
+        <div class="field"><label>任务关系</label><input placeholder="关联 / 阻塞 / 子任务..."></div>
+      </div>
+      <div style="font-size:11px;color:#777">☑ 关联当前 SiYuan Block</div>
+    </div>
+    <div class="dialogfoot"><button class="btn gray" onclick="closeTaskDialog()">取消</button><button class="btn primary" onclick="closeTaskDialog()">保存任务</button></div>
+  </div>
+</div>
+
+<!-- Project / Label Manager -->
+<div class="overlay" id="managerOverlay">
+  <div class="dialog manager-dialog">
+    <div class="dialoghead"><b>管理 Vikunja</b><button class="close" onclick="closeManager()">×</button></div>
+    <div class="manager-tabs2"><button class="active" onclick="managerTab(this,'projects')">项目</button><button onclick="managerTab(this,'labels')">标签</button></div>
+    <div class="manager-list" id="projects">
+      <div class="manager-item"><div class="color-dot"></div><div class="grow"><b>SiYuan Plugin</b><br><span>12 个未完成任务</span></div><button>✎</button><button>⋯</button></div>
+      <div class="manager-item"><div class="color-dot" style="background:#6e7f9b"></div><div class="grow"><b>VCPDesk</b><br><span>18 个未完成任务</span></div><button>✎</button><button>⋯</button></div>
+      <div class="manager-item"><div class="color-dot" style="background:#9b7d63"></div><div class="grow"><b>OTDR</b><br><span>9 个未完成任务</span></div><button>✎</button><button>⋯</button></div>
+      <button class="add-manage">＋ 新建项目</button>
+    </div>
+    <div class="manager-list" id="labels" style="display:none">
+      <div class="manager-item"><div class="color-dot" style="background:#c17668"></div><div class="grow"><b>#开发</b><br><span>23 个任务使用</span></div><button>✎</button><button>⋯</button></div>
+      <div class="manager-item"><div class="color-dot" style="background:#6d8f79"></div><div class="grow"><b>#设计</b><br><span>11 个任务使用</span></div><button>✎</button><button>⋯</button></div>
+      <div class="manager-item"><div class="color-dot" style="background:#7e7498"></div><div class="grow"><b>#等待</b><br><span>6 个任务使用</span></div><button>✎</button><button>⋯</button></div>
+      <button class="add-manage">＋ 新建标签</button>
+    </div>
+    <div class="dialogfoot"><button class="btn gray" onclick="closeManager()">关闭</button></div>
+  </div>
+</div>
+
+<div class="legend">V4：新建/编辑统一 Dialog；项目与标签独立管理；附件进入任务详情和编辑 Dialog；Dock 不再底部追加复杂表单</div>
+
+<script>
+let editing=false;
+function openDetail(t){document.getElementById('detailTitle').textContent=t;document.getElementById('listMode').style.display='none';document.getElementById('detail').classList.add('show')}
+function closeDetail(){document.getElementById('detail').classList.remove('show');document.getElementById('listMode').style.display='flex'}
+function openTaskDialog(isEdit=false){
+  editing=isEdit;
+  document.getElementById('dialogTitle').textContent=isEdit?'编辑任务':'新建任务';
+  if(isEdit) document.getElementById('taskTitleInput').value=document.getElementById('detailTitle').textContent;
+  else document.getElementById('taskTitleInput').value='';
+  document.getElementById('taskOverlay').classList.add('show');
+}
+function closeTaskDialog(){document.getElementById('taskOverlay').classList.remove('show')}
+function editFromRow(e,t){e.stopPropagation();document.getElementById('taskTitleInput').value=t;document.getElementById('dialogTitle').textContent='编辑任务';document.getElementById('taskOverlay').classList.add('show')}
+function openManager(){document.getElementById('managerOverlay').classList.add('show')}
+function closeManager(){document.getElementById('managerOverlay').classList.remove('show')}
+function managerTab(btn,id){
+  document.querySelectorAll('.manager-tabs2 button').forEach(x=>x.classList.remove('active'));btn.classList.add('active');
+  document.getElementById('projects').style.display=id==='projects'?'block':'none';
+  document.getElementById('labels').style.display=id==='labels'?'block':'none';
+}
+function fakeAttach(){
+  document.getElementById('attachList').insertAdjacentHTML('beforeend','<div class="attachment"><div class="atticon">🖼</div><div class="attmain"><b>new-attachment.png</b><span>328 KB</span></div><button class="icon">×</button></div>');
+}
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'){closeTaskDialog();closeManager()}
+});
+</script>
+</body>
+</html>

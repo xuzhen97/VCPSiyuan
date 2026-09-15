@@ -1,0 +1,30 @@
+.vcp-siyuan-token-editor {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.vcp-siyuan-token-editor input {
+    flex: 1;
+}
+
+.vcp-siyuan-settings-test {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.vcp-siyuan-settings-test-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.vcp-siyuan-settings-test-status {
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: normal;
+    word-break: break-word;
+}

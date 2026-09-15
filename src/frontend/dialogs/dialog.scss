@@ -1,0 +1,181 @@
+// Shared modal shell for the plugin's overlay hosts, plus the dialog internals.
+//
+// The host element created by the plugin carries `.vcp-siyuan-modal`; the panel
+// is whatever single child the component mounts (`task-dialog`, `task-detail`,
+// `project-manager`, …). Styling the panel through the host child means every
+// component only owns its internals and no component has to know it is modal.
+
+.vcp-siyuan-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 16px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.35);
+
+    > * {
+        width: 100%;
+        max-width: 560px;
+        box-sizing: border-box;
+        padding: 16px;
+        border-radius: 8px;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-surface, #202124);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+    }
+
+    h2 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.4;
+    }
+
+    input,
+    textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        border: 1px solid var(--b3-border-color, #dadce0);
+        border-radius: 4px;
+        background: var(--b3-theme-background, #fff);
+        color: inherit;
+        font: inherit;
+    }
+}
+
+.vcp-siyuan-task-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 13px;
+        color: var(--b3-theme-on-surface-light, #5f6368);
+    }
+
+    textarea {
+        min-height: 140px;
+        resize: vertical;
+        font-family: var(--b3-font-family-code, monospace);
+        font-size: 12px;
+    }
+
+    select {
+        min-height: 32px;
+        padding: 5px 7px;
+        border: 1px solid var(--b3-border-color, #dadce0);
+        border-radius: 4px;
+        background: var(--b3-theme-background, #fff);
+        color: inherit;
+        font: inherit;
+    }
+
+    &__reminders,
+    &__repeat {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    &__reminder {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+    }
+
+    &__conflict {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 8px;
+        border-left: 3px solid var(--b3-theme-warning, #f0a000);
+        background: var(--b3-theme-surface);
+        color: var(--b3-theme-on-surface-light);
+        font-size: 12px;
+    }
+
+    &__error {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--b3-theme-error, #ea4335);
+    }
+
+    &__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    &__attachments {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+
+        h3 {
+            margin: 0;
+            font-size: 13px;
+        }
+
+        small,
+        p {
+            margin: 0;
+            color: var(--b3-theme-on-surface-light, #5f6368);
+            font-size: 12px;
+        }
+    }
+}
+
+.vcp-siyuan-attachment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    &__item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border: 1px solid var(--b3-border-color, #dadce0);
+        border-radius: 4px;
+        font-size: 12px;
+    }
+
+    &__name {
+        flex: 1;
+        word-break: break-all;
+    }
+
+    &__state {
+        color: var(--b3-theme-on-surface-light, #5f6368);
+        white-space: nowrap;
+    }
+}
+
+.vcp-siyuan-project-manager,
+.vcp-siyuan-label-manager {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    p {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--b3-theme-on-surface-light, #5f6368);
+    }
+
+    &__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+}

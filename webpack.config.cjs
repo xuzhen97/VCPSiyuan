@@ -1,0 +1,108 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const path = require("path");
+const fs = require("fs");
+const webpack = require("webpack");
+const { EsbuildPlugin } = require("esbuild-loader");
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const CopyPlugin = require("copy-webpack-plugin");
+const ZipPlugin = require("zip-webpack-plugin");
+
+module.exports = (env, argv) => {
+    const production = argv.mode === "production";
+    const plugins = [
+        new MiniCssExtractPlugin({
+            filename: production ? "dist/index.css" : "index.css",
+        }),
+    ];
+
+    if (production) {
+        plugins.push(
+            new webpack.BannerPlugin({
+                banner: () => fs.readFileSync("LICENSE").toString(),
+            }),
+            new CopyPlugin({
+                patterns: [
+                    { from: "README*.md", to: "./dist/" },
+                    { from: "LICENSE", to: "./dist/" },
+                    { from: "plugin.json", to: "./dist/" },
+                    { from: "icon.png", to: "./dist/", noErrorOnMissing: true },
+                    {
+                        from: "preview.png",
+                        to: "./dist/",
+                        noErrorOnMissing: true,
+                    },
+                    { from: "i18n/", to: "./dist/i18n/" },
+                    { from: "dist/kernel.js", to: "./dist/" },
+                ],
+            }),
+            new ZipPlugin({
+                filename: "package.zip",
+                algorithm: "gzip",
+                include: [/dist/],
+                pathMapper: (assetPath) => assetPath.replace("dist/", ""),
+            }),
+        );
+    } else {
+        plugins.push(
+            new CopyPlugin({
+                patterns: [{ from: "i18n/", to: "./i18n/" }],
+            }),
+        );
+    }
+
+    return {
+        mode: argv.mode || "development",
+        watch: !production,
+        devtool: production ? false : "eval-source-map",
+        output: {
+            filename: "[name].js",
+            path: path.resolve(__dirname),
+            libraryTarget: "commonjs2",
+            library: {
+                type: "commonjs2",
+            },
+        },
+        externals: {
+            siyuan: "siyuan",
+        },
+        entry: {
+            [production ? "dist/index" : "index"]: "./src/frontend/index.ts",
+        },
+        optimization: {
+            minimize: production,
+            minimizer: [new EsbuildPlugin()],
+        },
+        resolve: {
+            extensionAlias: {
+                ".js": [".ts", ".js"],
+            },
+            extensions: [".ts", ".scss", ".js", ".json"],
+        },
+        module: {
+            rules: [
+                {
+                    test: /\.ts(x?)$/,
+                    include: [path.resolve(__dirname, "src")],
+                    use: [
+                        {
+                            loader: "esbuild-loader",
+                            options: {
+                                target: "es6",
+                            },
+                        },
+                    ],
+                },
+                {
+                    test: /\.scss$/,
+                    include: [path.resolve(__dirname, "src")],
+                    use: [
+                        MiniCssExtractPlugin.loader,
+                        { loader: "css-loader" },
+                        { loader: "sass-loader" },
+                    ],
+                },
+            ],
+        },
+        plugins,
+    };
+};

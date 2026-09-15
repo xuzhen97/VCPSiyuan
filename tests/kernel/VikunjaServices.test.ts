@@ -1,0 +1,106 @@
+import { describe, expect, it, vi } from "vitest";
+import { AttachmentService } from "../../src/kernel/services/AttachmentService.js";
+import { ConnectionService } from "../../src/kernel/services/ConnectionService.js";
+import { TaskCommandService } from "../../src/kernel/services/TaskCommandService.js";
+
+const credentials = {
+    origin: "https://tasks.example",
+    token: "secret",
+};
+
+describe("Vikunja application services", () => {
+    it("reports v2.5.0 capabilities and computes the 30 MiB effective attachment limit", async () => {
+        const client = {
+            requestJson: vi.fn().mockResolvedValue({
+                status: 200,
+                headers: {},
+                data: {
+                    version: "v2.5.0",
+                    max_file_size: "20MB",
+                    task_attachments_enabled: true,
+                },
+            }),
+        };
+        const service = new ConnectionService(client as never, {
+            taskPatch: true,
+            projectPermissions: true,
+        });
+        const result = await service.test(credentials);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.data.serverVersion).toBe("v2.5.0");
+            expect(result.data.effectiveAttachmentLimitBytes).toBe(
+                20 * 1024 * 1024,
+            );
+            expect(result.data.writesAllowed).toBe(true);
+        }
+    });
+
+    it("disables writes for an unsupported server version", async () => {
+        const client = {
+            requestJson: vi.fn().mockResolvedValue({
+                status: 200,
+                headers: {},
+                data: {
+                    version: "v2.6.0",
+                    max_file_size: "100MB",
+                    task_attachments_enabled: false,
+                },
+            }),
+        };
+        const service = new ConnectionService(client as never, {
+            taskPatch: true,
+            projectPermissions: true,
+        });
+        const result = await service.test(credentials);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.writesAllowed).toBe(false);
+    });
+
+    it("returns ATTACHMENTS_DISABLED without calling the gateway", async () => {
+        const gateway = { upload: vi.fn(), delete: vi.fn() };
+        const service = new AttachmentService(gateway as never, {
+            attachmentsEnabled: false,
+        });
+        const result = await service.upload(credentials, {
+            taskId: 1,
+            files: [],
+        });
+        expect(result).toEqual({
+            ok: false,
+            error: expect.objectContaining({ code: "ATTACHMENTS_DISABLED" }),
+        });
+        expect(gateway.upload).not.toHaveBeenCalled();
+    });
+
+    it("blocks a stale update before PATCH and refreshes after a successful relation update", async () => {
+        const gateway = {
+            get: vi.fn().mockResolvedValue({
+                value: {
+                    id: 1,
+                    updatedAt: "new",
+                    labels: [],
+                    assignees: [],
+                },
+                etag: '"new"',
+                updatedAt: "new",
+            }),
+            patchScalars: vi.fn(),
+            setLabels: vi.fn().mockResolvedValue(undefined),
+            setAssignees: vi.fn().mockResolvedValue(undefined),
+        };
+        const service = new TaskCommandService(gateway as never, {
+            writesAllowed: true,
+        });
+        const stale = await service.update(credentials, {
+            taskId: 1,
+            patch: { title: "x" },
+            expected: { etag: '"old"' },
+        });
+        expect(stale).toEqual({
+            ok: false,
+            error: expect.objectContaining({ code: "CONFLICT" }),
+        });
+        expect(gateway.patchScalars).not.toHaveBeenCalled();
+    });
+});

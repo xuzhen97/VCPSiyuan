@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>VCPSiyuan Dev Playground (思源插件沙箱)</title>
+        <style>
+            :root {
+                --b3-theme-background: #ffffff;
+                --b3-theme-surface: #f8f9fa;
+                --b3-theme-surface-lighter: #ffffff;
+                --b3-theme-primary: #4285f4;
+                --b3-theme-primary-light: rgba(66, 133, 244, 0.1);
+                --b3-theme-error: #ea4335;
+                --b3-theme-on-surface: #202124;
+                --b3-theme-on-surface-light: #5f6368;
+                --b3-border-color: #dadce0;
+                --b3-font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    Helvetica, Arial, sans-serif;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: var(--b3-font-family);
+                background: #eef2f6;
+                color: var(--b3-theme-on-surface);
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                box-sizing: border-box;
+            }
+
+            header {
+                background: #1e293b;
+                color: white;
+                padding: 12px 20px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+
+            header h1 {
+                margin: 0;
+                font-size: 16px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .main-container {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+                padding: 16px;
+                gap: 16px;
+            }
+
+            /* 模拟思源工作区 */
+            .workspace-mock {
+                display: flex;
+                flex: 1;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+                overflow: hidden;
+                border: 1px solid var(--b3-border-color);
+            }
+
+            .dock-bar {
+                width: 48px;
+                background: #f1f5f9;
+                border-right: 1px solid var(--b3-border-color);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 12px 0;
+                gap: 12px;
+            }
+
+            .dock-bar-item {
+                width: 36px;
+                height: 36px;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                color: #64748b;
+                transition: all 0.2s;
+            }
+
+            .dock-bar-item:hover,
+            .dock-bar-item.active {
+                background: white;
+                color: var(--b3-theme-primary);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+
+            .dock-bar-spacer {
+                flex: 1;
+            }
+
+            .dock-panel-container {
+                width: 360px;
+                border-left: 1px solid var(--b3-border-color);
+                background: white;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .editor-area {
+                flex: 1;
+                padding: 40px;
+                background: #fafbfc;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .editor-title {
+                font-size: 28px;
+                font-weight: 700;
+                border-bottom: 1px solid var(--b3-border-color);
+                padding-bottom: 12px;
+            }
+
+            /* 调试配置控制台 */
+            .debug-console {
+                width: 360px;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+                border: 1px solid var(--b3-border-color);
+                display: flex;
+                flex-direction: column;
+                padding: 16px;
+                gap: 12px;
+                overflow-y: auto;
+            }
+
+            .debug-console h2 {
+                font-size: 15px;
+                margin: 0 0 8px 0;
+                padding-bottom: 8px;
+                border-bottom: 1px solid var(--b3-border-color);
+            }
+
+            .form-group {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .form-group label {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--b3-theme-on-surface-light);
+            }
+
+            .b3-text-field {
+                border: 1px solid var(--b3-border-color);
+                padding: 8px 10px;
+                border-radius: 4px;
+                font-size: 13px;
+                outline: none;
+                box-sizing: border-box;
+                width: 100%;
+            }
+
+            .b3-text-field:focus {
+                border-color: var(--b3-theme-primary);
+            }
+
+            .b3-button {
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 13px;
+                cursor: pointer;
+                border: 1px solid transparent;
+                font-weight: 500;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+            }
+
+            .b3-button--primary {
+                background: var(--b3-theme-primary);
+                color: white;
+            }
+
+            .b3-button--outline {
+                background: transparent;
+                border-color: var(--b3-border-color);
+                color: var(--b3-theme-on-surface);
+            }
+
+            .b3-button--outline:hover {
+                border-color: var(--b3-theme-primary);
+                color: var(--b3-theme-primary);
+            }
+
+            .b3-button--text {
+                background: transparent;
+                color: var(--b3-theme-primary);
+                border: none;
+                padding: 4px 8px;
+            }
+
+            .b3-button--text:hover {
+                background: var(--b3-theme-primary-light);
+            }
+
+            .log-box {
+                flex: 1;
+                background: #0f172a;
+                color: #38bdf8;
+                font-family: monospace;
+                font-size: 11px;
+                padding: 10px;
+                border-radius: 4px;
+                overflow-y: auto;
+                max-height: 200px;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>⚡ VCPSiyuan 浏览器调试沙箱 (Playground)</h1>
+            <div>
+                <span style="font-size: 12px; color: #94a3b8"
+                    >模拟思源 3.8+ 桌面 Dock 运行环境</span
+                >
+            </div>
+        </header>
+
+        <div class="main-container">
+            <!-- 模拟思源工作区 -->
+            <div class="workspace-mock">
+                <!-- 模拟主编辑区域 -->
+                <div class="editor-area">
+                    <div class="editor-title">每日笔记 / Daily Note</div>
+                    <p style="color: #64748b">
+                        这里是主文档内容区域。右侧上方正在运行真实的 Vikunja
+                        插件 Dock 实例（默认宽度 360px）。
+                    </p>
+                </div>
+
+                <!-- 模拟 Dock 面板区域 -->
+                <div class="dock-panel-container" id="dock-mount-point">
+                    <!-- 插件 Dock 将挂载在这里 -->
+                </div>
+
+                <!-- 模拟右侧侧边图标栏 -->
+                <div class="dock-bar">
+                    <div
+                        class="dock-bar-item active"
+                        id="dock-trigger-vikunja"
+                        title="Vikunja 任务"
+                    >
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 32 32"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M4 6h24v4H4zm0 8h24v4H4zm0 8h16v4H4z"
+                            ></path>
+                        </svg>
+                    </div>
+                    <div class="dock-bar-item" title="反向链接">🔗</div>
+                    <div class="dock-bar-item" title="标签">🏷️</div>
+                    <div class="dock-bar-spacer"></div>
+                </div>
+            </div>
+
+            <!-- 调试控制台与环境模拟 -->
+            <div class="debug-console">
+                <h2>⚙️ 思源环境与密钥模拟 (Secrets)</h2>
+
+                <div class="form-group">
+                    <label>Vikunja API Base URL</label>
+                    <input
+                        type="text"
+                        id="cfg-base-url"
+                        class="b3-text-field"
+                        placeholder="http://localhost:3456"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label>思源密钥名称 (Secret Name)</label>
+                    <input
+                        type="text"
+                        id="cfg-secret-name"
+                        class="b3-text-field"
+                        value="VIKUNJA_API_TOKEN"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label>思源密钥值 (Token 明文 - 仅本地调试存储)</label>
+                    <input
+                        type="password"
+                        id="cfg-secret-value"
+                        class="b3-text-field"
+                        placeholder="粘贴你的 Vikunja Token"
+                    />
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 4px">
+                    <button
+                        class="b3-button b3-button--primary"
+                        id="btn-save-secrets"
+                        style="flex: 1"
+                    >
+                        保存并重载插件
+                    </button>
+                    <button
+                        class="b3-button b3-button--outline"
+                        id="btn-test-conn"
+                    >
+                        测试连接
+                    </button>
+                </div>
+
+                <div
+                    id="test-result-status"
+                    style="font-size: 12px; min-height: 18px"
+                ></div>
+
+                <h2>📋 运行日志 (Console)</h2>
+                <div class="log-box" id="log-box"></div>
+            </div>
+        </div>
+
+        <script type="module" src="/playground.ts"></script>
+    </body>
+</html>

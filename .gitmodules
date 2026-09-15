@@ -13,3 +13,6 @@
 [submodule "examples/VikunjaDev"]
 	path = examples/VikunjaDev
 	url = https://github.com/xuzhen97/VikunjaDev.git
+[submodule "examples/vikunja"]
+	path = examples/vikunja
+	url = https://github.com/go-vikunja/vikunja.git
