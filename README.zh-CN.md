@@ -32,6 +32,50 @@ VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原�
 - **项目与标签管理。** 影响预览与标题精确匹配的二次确认门禁已实现并有测试，但从未被构造，因此无法创建、编辑或删除项目和标签。
 - **提醒、重复规则、标签与负责人。** 任务创建与编辑目前只覆盖标题和描述。
 
+## 本地端到端插件测试（推荐流程）
+
+要在**真实思源宿主**里完整验证插件（加载、Dock、设置、任务读取/创建、Block 关联、状态同步），只需同时启动 Vikunja 与 SiYuan 两个进程。所有凭据只打印在终端，不写入任何文件。
+
+1. 终端 A —— 启动隔离的本地 Vikunja：
+
+   ```bash
+   cd "D:/VCPHub/VCPSiyuan"
+   pnpm dev:vikunja
+   ```
+
+   就绪后打印访问地址与凭据：
+
+   ```text
+   Web:    http://127.0.0.1:<动态端口>/
+   Origin: http://127.0.0.1:<动态端口>
+   Username: vcp-test-<run-id>
+   Password: <仅打印在终端>
+   Token:  <本地登录 JWT，约 1 天有效，仅打印在终端>
+   Data:   D:/VCPHub/VCPSiyuan/.tmp/vikunja-test/<run-id>
+   ```
+
+   记下 `Origin` 与 `Token`，保持该终端不关闭。
+
+2. 终端 B —— 启动真实 SiYuan 宿主（隔离工作空间 + 真实 Go Kernel）：
+
+   ```bash
+   cd "D:/VCPHub/VCPSiyuan"
+   pnpm dev:real
+   ```
+
+   首次运行若提示缺少宿主依赖，按下方「开发与沙箱」中的命令显式准备。启动后按终端提示打开 SiYuan Web 地址。
+
+3. 在 SiYuan 中配置插件：
+   - 「设置 → 插件 → VCP 思源助手」：Origin 填入第 1 步的 `Origin`（**不要**带 `/api/v2`）。
+   - 「设置 → 密钥和变量」：新增密钥 `VIKUNJA_API_TOKEN`，内容填入第 1 步的 `Token`。本地测试用打印的登录 JWT 即可（约 1 天有效）；长期接入请在 Vikunja 创建 API Token 再填入。
+   - 点击「测试连接」，能力报告出现即表示连通——该检查同时校验了需鉴权的 `/api/v2/user`，而不只是公开 `/info`。
+
+4. 打开右侧 Vikunja Dock，在「聚焦 / 收件箱 / 计划」视图验证任务读取、创建、完成与 Block 关联；改动后按下方「开发与沙箱」的验证命令回归。
+
+5. 结束测试：分别在两个终端按 `Ctrl+C` 停止。数据保留在 `.tmp/vikunja-test/<run-id>/` 与 `.tmp/siyuan-real/`，确认不再需要后分别用 `pnpm dev:vikunja:clean` 与 `pnpm dev:real:clean` 清理。
+
+> 说明：`dev:vikunja` 不固定占用 `3456` 等端口，每次使用新的动态回环端口和独立数据库；缺少构建产物（`examples/vikunja-server/vikunja-server.exe` 或 `examples/vikunja/frontend/dist/`）时会打印构建命令并退出，不会自动重编。
+
 ## 开发与沙箱
 
 插件通过思源 Kernel 访问 Vikunja，因此普通浏览器页面无法直接调用 API。请根据需要验证的行为选择最轻量的夹具：

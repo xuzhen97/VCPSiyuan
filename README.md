@@ -32,6 +32,50 @@ These capabilities have gateways, stores, and tests in place, but no production 
 - **Project and label management.** The impact preview and exact-title confirmation gate are implemented and tested but never constructed, so creating, editing, or deleting projects and labels is unavailable.
 - **Reminders, repeat rules, labels, and assignees.** Task creation and editing currently cover the title and description only.
 
+## Full local plugin test (recommended workflow)
+
+To verify the plugin end-to-end inside the **real SiYuan host** (loading, Dock, settings, task read/create, Block linking, state sync), start two processes: Vikunja and SiYuan. All credentials are printed to the terminal only and never written to any file.
+
+1. Terminal A — start an isolated local Vikunja:
+
+   ```bash
+   cd "D:/VCPHub/VCPSiyuan"
+   pnpm dev:vikunja
+   ```
+
+   When ready it prints the access address and credentials:
+
+   ```text
+   Web:    http://127.0.0.1:<dynamic-port>/
+   Origin: http://127.0.0.1:<dynamic-port>
+   Username: vcp-test-<run-id>
+   Password: <terminal only>
+   Token:  <local login JWT, ~1 day, terminal only>
+   Data:   D:/VCPHub/VCPSiyuan/.tmp/vikunja-test/<run-id>
+   ```
+
+   Note the `Origin` and `Token`, and keep that terminal open.
+
+2. Terminal B — start the real SiYuan host (isolated workspace + real Go Kernel):
+
+   ```bash
+   cd "D:/VCPHub/VCPSiyuan"
+   pnpm dev:real
+   ```
+
+   On first run, if it reports missing host dependencies, prepare them explicitly with the commands in the Development section below. Then open the SiYuan Web address it prints.
+
+3. Configure the plugin in SiYuan:
+   - Settings → Plugins → VCP SiYuan: set Origin to the `Origin` from step 1 (**do not** append `/api/v2`).
+   - Settings → Secrets and Variables: add a secret named `VIKUNJA_API_TOKEN` with the `Token` from step 1. The printed login JWT is fine for local testing (~1 day); for long-lived access create an API Token in Vikunja instead.
+   - Click "Test connection". The capability report confirms connectivity — this check also verifies the authenticated `/api/v2/user`, not just the public `/info`.
+
+4. Open the right-hand Vikunja Dock and verify task read/create/complete and Block linking across the Focus / Inbox / Planned views; after changes, run the validation commands in the Development section below.
+
+5. To stop: press `Ctrl+C` in each terminal. Data is retained under `.tmp/vikunja-test/<run-id>/` and `.tmp/siyuan-real/`; remove it with `pnpm dev:vikunja:clean` and `pnpm dev:real:clean` once you no longer need it.
+
+> Note: `dev:vikunja` never reserves `3456` or similar fixed ports; each run uses a fresh dynamic loopback port and an isolated database. If build artifacts (`examples/vikunja-server/vikunja-server.exe` or `examples/vikunja/frontend/dist/`) are missing, it prints the build commands and exits instead of recompiling automatically.
+
 ## Development
 
 The plugin reaches Vikunja through SiYuan's Kernel, so a plain browser page cannot call the API directly. Use the lightest harness that proves the behavior you are changing:
