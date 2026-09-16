@@ -5,6 +5,8 @@ node_modules
 .dprint
 dist
 package.zip
+# 本地构建的 Vikunja 服务端二进制（~139MB，构建产物，勿入库）
+examples/vikunja-server/*.exe
 index.css
 index.js
 kernel.js

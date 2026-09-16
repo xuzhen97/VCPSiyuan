@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AttachmentService } from "../../src/kernel/services/AttachmentService.js";
 import { ConnectionService } from "../../src/kernel/services/ConnectionService.js";
 import { TaskCommandService } from "../../src/kernel/services/TaskCommandService.js";
+import { HttpTransportError } from "../../src/kernel/http/HttpClient.js";
 
 const credentials = {
     origin: "https://tasks.example",
@@ -34,6 +35,47 @@ describe("Vikunja application services", () => {
             );
             expect(result.data.writesAllowed).toBe(true);
         }
+    });
+
+    it("requires valid credentials before reporting a connection", async () => {
+        const client = {
+            requestJson: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 200,
+                    headers: {},
+                    data: {
+                        version: "dev",
+                        api_version: "v2",
+                        max_file_size: "20MB",
+                        task_attachments_enabled: true,
+                    },
+                })
+                .mockRejectedValueOnce(
+                    new HttpTransportError(
+                        "http",
+                        "HTTP 401",
+                        { status: 401 },
+                    ),
+                ),
+        };
+        const service = new ConnectionService(client as never, {
+            taskPatch: true,
+            projectPermissions: true,
+        });
+
+        const result = await service.test(credentials);
+
+        expect(result).toEqual({
+            ok: false,
+            error: expect.objectContaining({ code: "UNAUTHORIZED" }),
+        });
+        expect(client.requestJson).toHaveBeenNthCalledWith(
+            2,
+            credentials,
+            "GET",
+            "/user",
+        );
     });
 
     it("disables writes for an unsupported server version", async () => {

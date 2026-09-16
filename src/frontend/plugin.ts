@@ -113,7 +113,8 @@ export class VCPSiyuanPlugin extends Plugin {
         this.initialized = true;
         this.addIcons(`
 <symbol id="iconVikunja" viewBox="0 0 32 32">
-    <path d="M4 6h24v4H4zm0 8h24v4H4zm0 8h16v4H4z"></path>
+    <rect x="3.5" y="3.5" width="25" height="25" rx="6"></rect>
+    <path d="M8.5 16l5 5 10-11" fill="none" stroke="var(--b3-theme-background)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path>
 </symbol>`);
 
         this.controller = new VikunjaController({

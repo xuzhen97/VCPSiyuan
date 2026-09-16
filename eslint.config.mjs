@@ -29,6 +29,15 @@ export default [
             "webpack.kernel.config.cjs",
         ],
     },
+    {
+        files: ["scripts/**/*.mjs"],
+        languageOptions: {
+            sourceType: "module",
+            parserOptions: {
+                ecmaVersion: "latest",
+            },
+        },
+    },
     ...compat.extends(
         "eslint:recommended",
         "plugin:@typescript-eslint/recommended",

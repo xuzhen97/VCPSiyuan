@@ -34,7 +34,7 @@ VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原�
 
 ## 开发与沙箱
 
-插件通过思源 Kernel 访问 Vikunja，因此普通浏览器页面无法直接调用 API。为此提供了两套测试夹具：
+插件通过思源 Kernel 访问 Vikunja，因此普通浏览器页面无法直接调用 API。请根据需要验证的行为选择最轻量的夹具：
 
 - **真实集成测试。** `tests/integration/vikunjaLive.test.ts` 通过忠实复刻的 `/api/network/forwardProxy`（`dev/forwardProxyShim.ts`）把真实的 Kernel 调用链（client、gateway、service）打到隔离的 Vikunja v2.5.0 实例上。只有设置了以下两个环境变量才会运行，否则自动跳过：
 
@@ -44,7 +44,21 @@ VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原�
   pnpm vitest run tests/integration/vikunjaLive.test.ts
   ```
 
-- **浏览器沙箱。** `pnpm dev:play` 使用同一个 shim 和真实的生产 RPC 分发表来托管 `dev/`，可以在浏览器中对真实服务端调试 Dock、Store 和传输层。由于此时是浏览器直接发起 HTTP 请求，本地 Vikunja 实例需要为沙箱来源开启 CORS（`cors.enable: true` 并包含 `http://localhost:*`）。这只影响沙箱：正式插件始终经由 Kernel 请求，不需要 CORS。
+- **组件 Playground。** `pnpm dev:play` 使用同一个 shim 和真实的生产 RPC 分发表来托管 `dev/`，可以在浏览器中对真实服务端调试 Dock、Store 和传输层。由于此时是浏览器直接发起 HTTP 请求，本地 Vikunja 实例需要为 Playground 来源开启 CORS（`cors.enable: true` 并包含 `http://localhost:*`）。它不是完整的思源宿主，不经过 Plugin loader、真实 Dock layout、块编辑器、插件持久化和 Go Kernel 插件运行时。正式插件始终经由 Kernel 请求，不需要 CORS。
+
+- **真实思源宿主。** `pnpm dev:real` 构建插件，并使用已检出的真实 SiYuan Electron 与 Go Kernel 启动。它只使用隔离的 `.tmp/siyuan-real/workspace`，不会修改正式工作空间，也不会终止无关进程。启动器动态选择回环端口，不固定占用 `5173`、`5174` 或 `6806`；日志保存在 `.tmp/siyuan-real/logs/` 下的 `plugin-build.log`、`kernel.log` 和 `electron.log`。
+
+  如果启动器报告大型宿主依赖缺失，请显式准备：
+
+  ```bash
+  git submodule update --init --recursive
+  cd "examples/siyuan/app" && pnpm install --registry https://registry.npmmirror.com
+  cd "examples/siyuan/app" && pnpm run install:electron
+  cd "examples/siyuan/app" && pnpm run dev
+  cd "examples/siyuan/kernel" && go build -tags "fts5 sqlcipher" -o "../app/kernel/SiYuan-Kernel.exe"
+  ```
+
+  使用 `pnpm dev:real` 启动真实宿主，按 Ctrl+C 停止；隔离工作空间和日志会保留。使用 `pnpm dev:real:clean` 只删除启动器创建的 `.tmp/siyuan-real/`。启动器不会自动安装 Go 或 Electron，也不会静默回退到组件 Playground。
 
 ## 卸载与隐私
 

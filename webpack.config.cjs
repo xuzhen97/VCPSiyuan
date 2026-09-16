@@ -26,6 +26,7 @@ module.exports = (env, argv) => {
                     { from: "LICENSE", to: "./dist/" },
                     { from: "plugin.json", to: "./dist/" },
                     { from: "icon.png", to: "./dist/", noErrorOnMissing: true },
+                    { from: "icon.svg", to: "./dist/", noErrorOnMissing: true },
                     {
                         from: "preview.png",
                         to: "./dist/",

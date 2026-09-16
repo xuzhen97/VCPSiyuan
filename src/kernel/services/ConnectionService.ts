@@ -38,6 +38,13 @@ export class ConnectionService {
             const response = await this.client.requestJson<
                 Record<string, unknown>
             >(credentials, "GET", "/info");
+            // /info is public on Vikunja, so it proves reachability but not
+            // that the configured token can read or write user data.
+            await this.client.requestJson<Record<string, unknown>>(
+                credentials,
+                "GET",
+                "/user",
+            );
             const serverVersion =
                 typeof response.data.version === "string"
                     ? response.data.version

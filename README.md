@@ -34,7 +34,7 @@ These capabilities have gateways, stores, and tests in place, but no production 
 
 ## Development
 
-The plugin reaches Vikunja through SiYuan's Kernel, so a plain browser page cannot call the API directly. Two harnesses cover that gap:
+The plugin reaches Vikunja through SiYuan's Kernel, so a plain browser page cannot call the API directly. Use the lightest harness that proves the behavior you are changing:
 
 - **Live integration tests.** `tests/integration/vikunjaLive.test.ts` drives the real Kernel stack (client, gateways, services) against an isolated Vikunja v2.5.0 instance through a faithful reimplementation of `/api/network/forwardProxy` (`dev/forwardProxyShim.ts`). They are skipped unless both variables are set:
 
@@ -44,7 +44,21 @@ The plugin reaches Vikunja through SiYuan's Kernel, so a plain browser page cann
   pnpm vitest run tests/integration/vikunjaLive.test.ts
   ```
 
-- **Browser sandbox.** `pnpm dev:play` serves `dev/` using the same shim plus the production RPC dispatch table, so the Dock, stores, and transport can be exercised in a browser against a real server. Because the browser then makes the HTTP call itself, a local Vikunja instance needs CORS enabled for the sandbox origin (`cors.enable: true` with `http://localhost:*`). This is sandbox-only: the shipped plugin always goes through the Kernel and needs no CORS.
+- **Component Playground.** `pnpm dev:play` serves `dev/` using the same shim plus the production RPC dispatch table, so the Dock, stores, and transport can be exercised in a browser against a real server. Because the browser then makes the HTTP call itself, a local Vikunja instance needs CORS enabled for the sandbox origin (`cors.enable: true` with `http://localhost:*`). This is not a full SiYuan host: it bypasses the Plugin loader, real Dock layout, block editor, persistence, and Go Kernel plugin runtime. The shipped plugin always goes through the Kernel and needs no CORS.
+
+- **Real SiYuan host.** `pnpm dev:real` builds the plugin and starts the checked-out SiYuan Electron app with the real Go Kernel. It uses only the isolated `.tmp/siyuan-real/workspace` and never changes a production workspace or terminates unrelated processes. The launcher chooses an available loopback port instead of reserving `5173`, `5174`, or `6806`, and keeps logs in `.tmp/siyuan-real/logs/` (`plugin-build.log`, `kernel.log`, and `electron.log`).
+
+  Prepare the large host dependencies explicitly when the launcher reports them as missing:
+
+  ```bash
+  git submodule update --init --recursive
+  cd "examples/siyuan/app" && pnpm install --registry https://registry.npmmirror.com
+  cd "examples/siyuan/app" && pnpm run install:electron
+  cd "examples/siyuan/app" && pnpm run dev
+  cd "examples/siyuan/kernel" && go build -tags "fts5 sqlcipher" -o "../app/kernel/SiYuan-Kernel.exe"
+  ```
+
+  Start the real host with `pnpm dev:real`. Stop it with Ctrl+C; the isolated workspace and logs are intentionally preserved. Remove only the launcher-owned directory with `pnpm dev:real:clean`. The launcher never installs Go or Electron automatically and never falls back to the Component Playground.
 
 ## Uninstall and privacy
 
