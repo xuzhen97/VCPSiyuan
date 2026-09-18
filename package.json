@@ -12,6 +12,8 @@
     "dev:real": "node scripts/dev-real.mjs",
     "dev:real:web": "node scripts/dev-real.mjs --web",
     "dev:real:clean": "node scripts/dev-real.mjs --clean",
+    "dev:all": "node scripts/dev-all.mjs",
+    "dev:all:clean": "node scripts/dev-all.mjs --clean",
     "dev:vikunja": "node scripts/dev-vikunja.mjs",
     "dev:vikunja:clean": "node scripts/dev-vikunja.mjs --clean",
     "dev": "run-p dev:kernel dev:app",

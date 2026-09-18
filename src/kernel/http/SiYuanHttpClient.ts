@@ -6,6 +6,7 @@ import {
     HttpTransportError,
     UploadFilePayload,
 } from "./HttpClient.js";
+import { decodeBase64, encodeBase64, toBytes } from "../../shared/bytes.js";
 
 export type KernelFetchInit = {
     method?: string;
@@ -193,7 +194,15 @@ export class SiYuanHttpClient implements HttpClient {
         ) {
             data = undefined;
         } else if (responseMode === "binary") {
-            const bytes = decodeBase64(target.body);
+            let bytes: Uint8Array;
+            try {
+                bytes = decodeBase64(target.body);
+            } catch {
+                throw new HttpTransportError(
+                    "invalid-response",
+                    "Proxy returned invalid Base64",
+                );
+            }
             if (bytes.byteLength > this.maxBinaryBytes) {
                 throw new HttpTransportError(
                     "too-large",
@@ -276,14 +285,10 @@ export class SiYuanHttpClient implements HttpClient {
                     payload: body.value,
                 };
             case "binary": {
-                const bytes =
-                    body.value instanceof Uint8Array
-                        ? body.value
-                        : new Uint8Array(body.value);
                 return {
                     contentType: "application/octet-stream",
                     payloadEncoding: "base64",
-                    payload: encodeBase64(bytes),
+                    payload: encodeBase64(toBytes(body.value)),
                 };
             }
             case "multipart": {
@@ -357,7 +362,12 @@ function encodeMultipart(files: UploadFilePayload[]): {
     bytes: Uint8Array;
     contentType: string;
 } {
-    for (const file of files) {
+    // Bytes must be rebuilt first: see toBytes for why they arrive JSON-shaped.
+    const attachments = files.map((file) => ({
+        ...file,
+        bytes: toBytes(file.bytes),
+    }));
+    for (const file of attachments) {
         if (file.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
             throw new HttpTransportError(
                 "too-large",
@@ -367,7 +377,7 @@ function encodeMultipart(files: UploadFilePayload[]): {
     }
     const boundary = `----vcpsiyuan-${Math.random().toString(16).slice(2)}`;
     const chunks: Uint8Array[] = [];
-    for (const file of files) {
+    for (const file of attachments) {
         chunks.push(utf8(`--${boundary}\r\n`));
         chunks.push(
             utf8(
@@ -394,7 +404,37 @@ function sanitizeFileName(value: string): string {
 }
 
 function utf8(value: string): Uint8Array {
-    return new TextEncoder().encode(value);
+    const bytes: number[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+        let code = value.charCodeAt(index);
+        // Fold a surrogate pair into one code point before encoding.
+        if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+            const low = value.charCodeAt(index + 1);
+            if (low >= 0xdc00 && low <= 0xdfff) {
+                code = ((code - 0xd800) << 10) + (low - 0xdc00) + 0x10000;
+                index += 1;
+            }
+        }
+        if (code < 0x80) {
+            bytes.push(code);
+        } else if (code < 0x800) {
+            bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+        } else if (code < 0x10000) {
+            bytes.push(
+                0xe0 | (code >> 12),
+                0x80 | ((code >> 6) & 0x3f),
+                0x80 | (code & 0x3f),
+            );
+        } else {
+            bytes.push(
+                0xf0 | (code >> 18),
+                0x80 | ((code >> 12) & 0x3f),
+                0x80 | ((code >> 6) & 0x3f),
+                0x80 | (code & 0x3f),
+            );
+        }
+    }
+    return new Uint8Array(bytes);
 }
 
 function concat(chunks: Uint8Array[]): Uint8Array {
@@ -408,29 +448,3 @@ function concat(chunks: Uint8Array[]): Uint8Array {
     return result;
 }
 
-function encodeBase64(bytes: Uint8Array): string {
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let index = 0; index < bytes.length; index += chunkSize) {
-        binary += String.fromCharCode(
-            ...bytes.subarray(index, index + chunkSize),
-        );
-    }
-    return btoa(binary);
-}
-
-function decodeBase64(value: string): Uint8Array {
-    let binary: string;
-    try {
-        binary = atob(value);
-    } catch {
-        throw new HttpTransportError(
-            "invalid-response",
-            "Proxy returned invalid Base64",
-        );
-    }
-    const result = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1)
-        result[index] = binary.charCodeAt(index);
-    return result;
-}

@@ -95,6 +95,35 @@ describe("SiYuanHttpClient", () => {
         expect(envelope.payload).not.toContain("[object Object]");
     });
 
+    it("rebuilds bytes that crossed the JSON-RPC boundary as a plain object", async () => {
+        const fetch = vi
+            .fn()
+            .mockResolvedValue(proxyResponse({ status: 201, body: "{}" }));
+        const client = new SiYuanHttpClient(fetch);
+        // The plugin RPC is JSON-RPC: a Uint8Array sent by the frontend arrives in
+        // the Kernel as {"0":104,...} with no byteLength, which used to make
+        // Uint8Array#set throw before any request was sent.
+        const bytes = JSON.parse(
+            JSON.stringify(new Uint8Array([104, 101, 108, 108, 111])),
+        ) as unknown as Uint8Array;
+
+        await client.request({
+            method: "POST",
+            url: "https://tasks.example/api/v2/tasks/9/attachments",
+            body: {
+                kind: "multipart",
+                files: [{ id: "f1", name: "a.txt", type: "text/plain", bytes }],
+            },
+            responseMode: "json",
+        });
+
+        const envelope = JSON.parse(
+            (fetch.mock.calls[0][1] as { body: string }).body,
+        );
+        const decoded = Buffer.from(envelope.payload, "base64");
+        expect(decoded.includes(Buffer.from("hello", "utf8"))).toBe(true);
+    });
+
     it("decodes bounded binary responses without applying the JSON limit", async () => {
         const binary = new Uint8Array([0, 1, 2, 255]);
         let binaryText = "";
@@ -117,6 +146,79 @@ describe("SiYuanHttpClient", () => {
         });
 
         expect([...result.data]).toEqual([...binary]);
+    });
+
+    it("encodes and decodes Base64 without btoa/atob/TextEncoder", async () => {
+        // The SiYuan Kernel runs plugin code in goja, which exposes ECMAScript
+        // built-ins only -- btoa/atob/TextEncoder are undefined there, so relying
+        // on them made every attachment upload and binary download fail. Node has
+        // all three, so remove them here to reproduce the Kernel runtime.
+        const saved = {
+            btoa: Reflect.get(globalThis, "btoa"),
+            atob: Reflect.get(globalThis, "atob"),
+            TextEncoder: Reflect.get(globalThis, "TextEncoder"),
+        };
+        Reflect.deleteProperty(globalThis, "btoa");
+        Reflect.deleteProperty(globalThis, "atob");
+        Reflect.deleteProperty(globalThis, "TextEncoder");
+        try {
+            const fetch = vi
+                .fn()
+                .mockResolvedValue(proxyResponse({ status: 201, body: "{}" }));
+            const client = new SiYuanHttpClient(fetch);
+            // "héllo" exercises multi-byte UTF-8, not just ASCII.
+            await client.request({
+                method: "POST",
+                url: "https://tasks.example/api/v2/tasks/9/attachments",
+                body: {
+                    kind: "multipart",
+                    files: [
+                        {
+                            id: "f1",
+                            name: "héllo.txt",
+                            type: "text/plain",
+                            bytes: new Uint8Array([0x68, 0x80, 0xff]),
+                        },
+                    ],
+                },
+                responseMode: "json",
+            });
+
+            const envelope = JSON.parse(
+                (fetch.mock.calls[0][1] as { body: string }).body,
+            );
+            expect(envelope.payloadEncoding).toBe("base64");
+            // Decode with a known-good reference independent of the client.
+            const raw = Buffer.from(envelope.payload, "base64");
+            await expect(raw.includes(Buffer.from("héllo.txt", "utf8"))).toBe(
+                true,
+            );
+            const decoded = raw.toString("latin1");
+            expect(decoded).toContain('name="files"; filename="h');
+            expect(decoded).toContain("\r\nContent-Type: text/plain\r\n");
+
+            const binary = Buffer.from([0, 1, 2, 255]).toString("base64");
+            const binaryFetch = vi.fn().mockResolvedValue(
+                proxyResponse({
+                    status: 200,
+                    body: binary,
+                    bodyEncoding: "base64",
+                    contentType: "application/octet-stream",
+                }),
+            );
+            const binaryResult = await new SiYuanHttpClient(binaryFetch)
+                .request<Uint8Array>({
+                    method: "GET",
+                    url: "https://tasks.example/api/v2/tasks/9/attachments/2",
+                    responseMode: "binary",
+                });
+            expect([...binaryResult.data]).toEqual([0, 1, 2, 255]);
+        } finally {
+            for (const [key, value] of Object.entries(saved)) {
+                if (value !== undefined)
+                    Reflect.set(globalThis, key, value as unknown);
+            }
+        }
     });
 
     it("maps a proxied 204 to undefined without JSON parsing", async () => {

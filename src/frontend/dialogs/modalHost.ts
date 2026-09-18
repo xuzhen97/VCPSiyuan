@@ -31,6 +31,7 @@ export function createModalHost(
    host.className = markerClass
       ? `vcp-siyuan-modal ${markerClass}`
       : "vcp-siyuan-modal";
+   host.style.zIndex = String(nextModalZIndex());
    const onKeyDown = (event: KeyboardEvent): void => {
       if (modalStack[modalStack.length - 1] !== host) return;
       if (event.key === "Escape") {
@@ -76,6 +77,24 @@ export function createModalHost(
          if (wasTop && opener?.isConnected) opener.focus();
       },
    };
+}
+
+/**
+ * Claims the next slot in SiYuan's dialog stacking order.
+ *
+ * SiYuan numbers its own dialogs with `++window.siyuan.zIndex` (starting at 10),
+ * so a hardcoded z-index either buries this host under the editor or, worse,
+ * leaves a confirmation opened on top of it (e.g. delete attachment) behind the
+ * host. Taking one slot per host keeps dialogs ordered by open time.
+ */
+function nextModalZIndex(): number {
+   const siyuan = (globalThis as { siyuan?: { zIndex?: unknown } }).siyuan;
+   if (siyuan && typeof siyuan.zIndex === "number") {
+      siyuan.zIndex += 1;
+      return siyuan.zIndex;
+   }
+   // Browser dev sandbox has no SiYuan globals; stay above the page content.
+   return 1000;
 }
 
 function getFocusableElements(host: HTMLElement): HTMLElement[] {

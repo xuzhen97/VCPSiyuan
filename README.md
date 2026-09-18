@@ -36,6 +36,8 @@ These capabilities have gateways, stores, and tests in place, but no production 
 
 To verify the plugin end-to-end inside the **real SiYuan host** (loading, Dock, settings, task read/create, Block linking, state sync), start two processes: Vikunja and SiYuan. All credentials are printed to the terminal only and never written to any file.
 
+> **Just want to test, no manual config?** Run one command: `pnpm dev:all`. It boots Vikunja and the real SiYuan web host together, **auto-writes the Origin + Token into the plugin config**, then prints the entry URL — open it in a browser and start testing. One `Ctrl+C` stops both; `pnpm dev:all:clean` cleans up. Below is the expanded two-terminal form.
+
 1. Terminal A — start an isolated local Vikunja:
 
    ```bash

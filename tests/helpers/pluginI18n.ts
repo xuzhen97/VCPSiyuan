@@ -105,6 +105,8 @@ export const taskDialogI18n: TaskDialogI18n = {
  repeatMonth: t("repeatMonth"),
  preservedRepeat: t("preservedRepeat"),
  blockLinkLabel: t("blockLinkLabel"),
+ blockLinkLocked: t("blockLinkLocked"),
+ blockLinkedCount: (count) => fill(t("blockLinkedCount"), { count }),
  projectRequired: t("projectRequired"),
  projectNotWritable: t("projectNotWritable"),
  conflict: t("conflict"),

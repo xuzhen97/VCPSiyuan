@@ -15,6 +15,7 @@ import { VikunjaDock } from "./dock/VikunjaDock.js";
 import { createSettings, SettingsDescriptor } from "./settings.js";
 import { VikunjaController } from "./controller/VikunjaController.js";
 import { AuthenticatedRpcEnvelope } from "./controller/VikunjaController.js";
+import { toBytes } from "../shared/bytes.js";
 import { RpcResponse, VikunjaRpcMethod } from "../shared/rpc.js";
 import { ConnectionInfo, RpcResult } from "../shared/contracts.js";
 import { registerBlockMenu } from "./context/blockMenu.js";
@@ -552,6 +553,16 @@ export class VCPSiyuanPlugin extends Plugin {
         });
     }
 
+    private async readLinkedTaskCount(blockId: string): Promise<number> {
+        if (!this.blockLinks) return 0;
+        try {
+            return (await this.blockLinks.read(blockId)).length;
+        } catch {
+            // Informational only; a failed read must not block task creation.
+            return 0;
+        }
+    }
+
     private async openCreateDialog(
         request: BlockCreateDialogRequest,
     ): Promise<void> {
@@ -567,6 +578,9 @@ export class VCPSiyuanPlugin extends Plugin {
             pendingOperations: this.pendingOperations,
         });
         const first = request.blockSummaries[0];
+        const linkedTaskCount = first
+            ? await this.readLinkedTaskCount(first.blockId)
+            : 0;
         const store = TaskDialogStore.create({
             projectId: request.projectId,
             linkedBlockId: first?.blockId,
@@ -576,6 +590,7 @@ export class VCPSiyuanPlugin extends Plugin {
                       documentId: first.documentId,
                       ...(first.title ? { title: first.title } : {}),
                       selectedCount: request.blockSummaries.length,
+                      linkedTaskCount,
                   }
                 : undefined,
         });
@@ -615,7 +630,7 @@ export class VCPSiyuanPlugin extends Plugin {
         );
         const dialog = new TaskDialog({
             store,
-            title: this.i18n.blockCreate,
+            title: request.blockIds.length === 0 ? this.i18n.newTask : this.i18n.blockCreate,
             i18n: this.taskDialogI18n(),
             projects: resources.projects,
             projectPath: (projectId) =>
@@ -649,6 +664,17 @@ export class VCPSiyuanPlugin extends Plugin {
                 this.resourceStore?.searchMembers(projectId, query),
             onSave: async () => {
                 await saveCreatedTask();
+                // Auto-refresh so the dock shows the new task without a manual click.
+                // The active view flashes a brief "refreshing" indicator; the other
+                // two views update silently so the task is ready when the user switches.
+                const store = this.taskListStore;
+                if (store) {
+                    void Promise.all([
+                        store.refresh("focus"),
+                        store.refresh("inbox"),
+                        store.refresh("planned"),
+                    ]);
+                }
                 attachmentSubscription();
                 attachmentStore.destroy();
                 dialogRef.current?.destroy();
@@ -660,7 +686,6 @@ export class VCPSiyuanPlugin extends Plugin {
                 dialogRef.current?.destroy();
                 disposeHost();
             },
-            confirmDiscard: () => this.confirmDiscardDraft(),
         });
         dialogRef.current = dialog;
         const modal = createModalHost(() => {
@@ -809,7 +834,9 @@ export class VCPSiyuanPlugin extends Plugin {
             itemId,
         );
         if (!download) return;
-        const blob = new Blob([new Uint8Array(download.bytes)], {
+        // The Kernel returns file bytes over JSON-RPC, which hands them back as a
+        // Base64 string rather than a Uint8Array.
+        const blob = new Blob([new Uint8Array(toBytes(download.bytes))], {
             type: download.mimeType,
         });
         const url = URL.createObjectURL(blob);
@@ -827,7 +854,8 @@ export class VCPSiyuanPlugin extends Plugin {
     ): Promise<void> {
         const download = await store.download(taskId, itemId);
         if (!download) return;
-        const blob = new Blob([new Uint8Array(download.bytes)], {
+        // Same JSON-RPC Base64 round-trip as downloadAttachment.
+        const blob = new Blob([new Uint8Array(toBytes(download.bytes))], {
             type: download.mimeType,
         });
         const url = URL.createObjectURL(blob);
@@ -1303,6 +1331,9 @@ export class VCPSiyuanPlugin extends Plugin {
             repeatMonth: this.i18n.repeatMonth,
             preservedRepeat: this.i18n.preservedRepeat,
             blockLinkLabel: this.i18n.blockLinkLabel,
+            blockLinkLocked: this.i18n.blockLinkLocked,
+            blockLinkedCount: (count) =>
+                this.i18n.blockLinkedCount.replace("{count}", String(count)),
             projectRequired: this.i18n.projectRequired,
             projectNotWritable: this.i18n.projectNotWritable,
             conflict: this.i18n.conflict,

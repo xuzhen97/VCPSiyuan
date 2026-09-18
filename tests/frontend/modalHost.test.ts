@@ -40,4 +40,31 @@ describe("createModalHost", () => {
         expect(document.activeElement).toBe(opener);
         opener.remove();
     });
+
+    it("takes its z-index from SiYuan's dialog counter so later dialogs stack above", () => {
+        // SiYuan numbers dialogs with ++window.siyuan.zIndex. A fixed z-index put
+        // this host above the confirmations opened from inside it (delete
+        // attachment), leaving both unreachable.
+        const host = { zIndex: 10 };
+        (globalThis as { siyuan?: { zIndex: number } }).siyuan = host;
+        try {
+            const first = createModalHost(() => {});
+            expect(first.host.style.zIndex).toBe("11");
+            // A dialog SiYuan opens afterwards takes the next number -> above us.
+            host.zIndex += 1;
+            expect(host.zIndex).toBe(12);
+            const second = createModalHost(() => {});
+            expect(second.host.style.zIndex).toBe("13");
+            first.dispose();
+            second.dispose();
+        } finally {
+            delete (globalThis as { siyuan?: unknown }).siyuan;
+        }
+    });
+
+    it("falls back to a fixed layer when SiYuan globals are absent", () => {
+        const modal = createModalHost(() => {});
+        expect(modal.host.style.zIndex).toBe("1000");
+        modal.dispose();
+    });
 });

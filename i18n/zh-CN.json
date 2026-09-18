@@ -113,6 +113,8 @@
   "repeatMonth": "月",
   "preservedRepeat": "服务端规则（只读）",
   "blockLinkLabel": "关联当前 Block",
+  "blockLinkLocked": "此任务将自动关联该 Block",
+  "blockLinkedCount": "该 Block 已关联 {count} 个任务",
   "blockLinkAfterCreateFailed": "任务已创建，但 Block 关联失败；请重试关联步骤",
   "projectRequired": "需要选择可写项目",
   "projectNotWritable": "所选项目不可写",

@@ -208,7 +208,10 @@ export function groupFocusTasks(
             overdue.push(task);
         } else if (due === today || start === today) {
             todayGroup.push(task);
-        } else if (!due && (task.priority ?? 0) > 0) {
+        } else if (!due) {
+            // No due date: surface it as a next-step item so undated tasks are
+            // not silently hidden from focus. `next` is capped (top 10, highest
+            // priority / most recently updated first) in the return value.
             next.push(task);
         }
     }

@@ -15,6 +15,7 @@ import {
     resolveDevPaths,
     syncPluginArtifacts,
     reserveLoopbackPort,
+    parsePort,
     runRealHost,
     waitForKernel,
 // @ts-expect-error The launcher is JavaScript and has no declaration file.
@@ -399,5 +400,52 @@ describe("real SiYuan launcher process ownership", () => {
             },
         })).rejects.toMatchObject({ code: "KERNEL_TIMEOUT" });
         expect(calls).toHaveLength(3);
+    });
+});
+
+describe("dev-real port selection", () => {
+    it("parsePort parses valid values and rejects unset/invalid ones", () => {
+        expect(parsePort("43210")).toBe(43210);
+        expect(parsePort(6806)).toBe(6806);
+        expect(parsePort("  1234  ")).toBe(1234);
+        expect(parsePort(undefined)).toBeNull();
+        expect(parsePort("")).toBeNull();
+        expect(parsePort("abc")).toBeNull();
+        expect(parsePort("0")).toBeNull();
+        expect(parsePort("70000")).toBeNull();
+    });
+
+    it("binds to the preferred port when one is supplied", async () => {
+        const events = new EventEmitter();
+        let listenOptions: unknown;
+        const server = {
+            once: events.once.bind(events),
+            listen(options: unknown, callback: () => void) {
+                listenOptions = options;
+                callback();
+            },
+            address: () => ({ port: 40000 }),
+            close(callback: (error?: Error) => void) {
+                callback();
+            },
+        };
+        const port = await reserveLoopbackPort({ createServer: () => server }, 40000);
+        expect(port).toBe(40000);
+        expect(listenOptions).toEqual({ host: "127.0.0.1", port: 40000 });
+    });
+
+    it("reports PORT_IN_USE when the preferred port is already taken", async () => {
+        const events = new EventEmitter();
+        const server = {
+            once: events.once.bind(events),
+            listen() {
+                events.emit("error", Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" }));
+            },
+            address: () => ({ port: 40000 }),
+            close() {},
+        };
+        await expect(reserveLoopbackPort({ createServer: () => server }, 40000)).rejects.toMatchObject({
+            code: "PORT_IN_USE",
+        });
     });
 });

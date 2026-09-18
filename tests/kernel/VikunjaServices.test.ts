@@ -84,7 +84,7 @@ describe("Vikunja application services", () => {
                 status: 200,
                 headers: {},
                 data: {
-                    version: "v2.6.0",
+                    version: "v2.4.0",
                     max_file_size: "100MB",
                     task_attachments_enabled: false,
                 },

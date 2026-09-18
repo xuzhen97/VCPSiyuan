@@ -18,7 +18,7 @@
 | SiYuan 工作空间 | `.tmp/siyuan-real/workspace` |
 | SiYuan 日志 | `.tmp/siyuan-real/logs/` |
 | 插件部署目录 | `.tmp/siyuan-real/workspace/data/plugins/VCPSiyuan/` |
-| SiYuan Web 端口 | 启动时动态分配，以终端输出为准 |
+| SiYuan Web 端口 | `dev:all` 默认固定 `16806`（Vikunja `13456`）；`SIYUAN_PORT` / `VIKUNJA_PORT` 可覆盖，以终端输出为准 |
 
 Windows Git Bash 中始终使用正斜杠路径并给路径加双引号。
 
@@ -224,6 +224,44 @@ curl -fsS \
 ```
 
 > 推荐长期方案：登录 `http://localhost:3456`，在 Vikunja 用户设置中创建有明确权限和过期时间的 API Token。插件需要任务、项目、标签、用户查询及任务附件相关权限。API Token 只在创建时显示一次。
+
+## 3A. 一键联调（推荐）：`pnpm dev:all`
+
+只想快速测试插件功能、不想手动配置时，用这一条命令。它在**一个进程**里同时：
+
+1. 启动本地 Vikunja（隔离、动态端口，等同第 3 节）；
+2. 启动真实 SiYuan Web 宿主（隔离工作空间 + 真实 Go Kernel，等同第 4 节）；
+3. 等两边都就绪后，**在本地 Vikunja 自动建一个"VCP Inbox"项目**，并把插件 `config.json` 写进隔离工作空间（`vikunjaOrigin` 指向本地 Vikunja、`inlineToken` 填入本次 JWT、`inboxProjectId` 指向刚建的收件箱项目）——无需手动填地址 / Token，**收件箱 tab 也能开箱即用**；
+4. 打印唯一入口 URL。
+
+```bash
+cd "D:/VCPHub/VCPSiyuan"
+pnpm dev:all
+```
+
+两边就绪后终端会打印：
+
+```text
+[dev:all] plugin configured: .tmp/siyuan-real/workspace/data/plugins/VCPSiyuan/config.json
+>>> Open http://127.0.0.1:<动态端口>/ in a real browser (Chrome/Edge). <<<
+```
+
+`pnpm dev:all` **默认把端口固定为 SiYuan `16806` / Vikunja `13456`**，入口恒为 `http://127.0.0.1:16806/`，可直接收藏。想换端口就显式覆盖：
+
+```powershell
+$env:SIYUAN_PORT=17000; $env:VIKUNJA_PORT=14321; pnpm dev:all
+```
+
+（PowerShell 语法；Git Bash 用 `SIYUAN_PORT=17000 VIKUNJA_PORT=14321 pnpm dev:all`。）默认端口若被占用会明确报 `PORT_IN_USE`，不会悄悄换端口。
+
+用**真正的桌面浏览器**（Chrome/Edge）打开该 URL 即可开始测试。按 `Ctrl+C` 一次停掉 Vikunja 和 SiYuan 两个进程树；数据保留，`pnpm dev:all:clean` 一并清理：
+
+```bash
+pnpm dev:all:clean
+```
+
+> 注意：`dev:all` 与 `dev:real:web` 共用同一个隔离工作空间和启动锁。若之前有 `pnpm dev:real:web` 仍在运行，会报 `already running` 而拒绝启动——先停掉那个终端再跑 `dev:all`。
+> Token 用的是本地 1 天有效期的登录 JWT（`inlineToken`），仅写入可销毁的 `.tmp/siyuan-real` 工作空间，不进入源码 / Git / 正式配置；长期联调请改用 Vikunja API Token。
 
 ## 4. 启动真实 SiYuan Web 宿主
 

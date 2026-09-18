@@ -36,6 +36,8 @@ VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原�
 
 要在**真实思源宿主**里完整验证插件（加载、Dock、设置、任务读取/创建、Block 关联、状态同步），只需同时启动 Vikunja 与 SiYuan 两个进程。所有凭据只打印在终端，不写入任何文件。
 
+> **只测功能、不想手动配置？** 用一条命令 `pnpm dev:all`：它同时拉起 Vikunja 与真实 SiYuan Web 宿主，**自动把 Origin + Token 写进插件配置**，然后打印入口 URL，你打开浏览器就能测；一次 `Ctrl+C` 全停，`pnpm dev:all:clean` 清理。下面是它展开后的手动流程。
+
 1. 终端 A —— 启动隔离的本地 Vikunja：
 
    ```bash

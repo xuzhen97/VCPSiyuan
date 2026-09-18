@@ -57,6 +57,23 @@ describe("task grouping", () => {
         ).toBe(12);
     });
 
+    it("lists undated tasks under next even without a priority", () => {
+        const groups = groupFocusTasks(
+            [
+                task(1, { priority: 0 }),
+                task(2, { priority: 0, updatedAt: "2026-09-13T01:00:00Z" }),
+                // Future-dated task stays out of focus (it belongs to planned).
+                task(3, { dueAt: "2026-09-20T08:00:00Z", priority: 5 }),
+            ],
+            new Date("2026-09-13T10:00:00Z"),
+            "Asia/Shanghai",
+        );
+
+        expect(groups.overdue).toHaveLength(0);
+        expect(groups.today).toHaveLength(0);
+        expect(groups.next.map((item) => item.id).sort()).toEqual([1, 2]);
+    });
+
     it("groups future tasks using the supplied local timezone", () => {
         const groups = groupPlannedTasks(
             [

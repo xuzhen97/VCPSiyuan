@@ -460,27 +460,50 @@ async function fetchKernel(url, options) {
     }
 }
 
-export function reserveLoopbackPort(netAdapter = net) {
+/**
+ * Parse an optional preferred port (env-supplied). Returns an int in [1, 65535],
+ * or null when unset/invalid so callers fall back to a dynamic loopback port.
+ */
+export function parsePort(value) {
+    if (value === undefined || value === null) return null;
+    const trimmed = String(value).trim();
+    if (trimmed === "") return null;
+    const parsed = Number(trimmed);
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : null;
+}
+
+export function reserveLoopbackPort(netAdapter = net, preferredPort = null) {
     return new Promise((resolve, reject) => {
         const server = netAdapter.createServer();
         let settled = false;
-        const fail = (error) => {
+        const fail = (code, message, error) => {
             if (!settled) {
                 settled = true;
-                reject(new DevRealError("PORT_ALLOCATION_FAILED", "Unable to allocate a loopback port.", error));
+                reject(new DevRealError(code, message, error));
             }
         };
-        server.once("error", fail);
-        server.listen({ host: "127.0.0.1", port: 0 }, () => {
+        server.once("error", (error) => {
+            if (preferredPort && error?.code === "EADDRINUSE") {
+                fail(
+                    "PORT_IN_USE",
+                    `Port ${preferredPort} is already in use. Free it or choose another via ${preferredPort ? "SIYUAN_PORT" : ""}.`.trim(),
+                    error,
+                );
+            } else {
+                fail("PORT_ALLOCATION_FAILED", "Unable to allocate a loopback port.", error);
+            }
+        });
+        const listenPort = preferredPort ?? 0;
+        server.listen({ host: "127.0.0.1", port: listenPort }, () => {
             const address = server.address();
             const port = typeof address === "object" && address ? address.port : undefined;
             if (!Number.isInteger(port) || port < 1 || port > 65535) {
-                server.close(() => fail(new Error("Invalid ephemeral port")));
+                server.close(() => fail("PORT_ALLOCATION_FAILED", "Allocated an invalid port.", new Error("Invalid port")));
                 return;
             }
             server.close((error) => {
                 if (error) {
-                    fail(error);
+                    fail("PORT_ALLOCATION_FAILED", "Unable to close the probe socket.", error);
                     return;
                 }
                 if (!settled) {
@@ -744,9 +767,10 @@ export async function runRealHost({
             process.stdout.write(`[plugin] synchronized ${name}; refresh or disable/enable the plugin in SiYuan if needed\n`);
         });
 
+        const preferredPort = parsePort(process.env.SIYUAN_PORT);
         let port;
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            port = await reserveLoopbackPort(adapters.net ?? net);
+            port = await reserveLoopbackPort(adapters.net ?? net, attempt === 0 ? preferredPort : null);
             const kernelArgs = [
                 "serve",
                 "--mode=dev",
@@ -789,7 +813,12 @@ export async function runRealHost({
                 kernelReady = true;
                 break;
             } catch (error) {
-                if (!(error instanceof DevRealError) || error.code !== "KERNEL_PORT_IN_USE" || attempt === 1) {
+                if (
+                    !(error instanceof DevRealError) ||
+                    error.code !== "KERNEL_PORT_IN_USE" ||
+                    attempt === 1 ||
+                    preferredPort
+                ) {
                     throw error;
                 }
                 process.stderr.write(`[kernel] port ${port} was occupied; retrying once\n`);

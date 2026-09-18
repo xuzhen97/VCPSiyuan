@@ -7,8 +7,10 @@ import path from "node:path";
 import {
     checkVikunjaPrerequisites,
     cleanVikunjaRoot,
+    createPermanentAPIToken,
     createTestCredentials,
     formatReadyOutput,
+    permissionsFromRoutes,
     loginToVikunja,
     reserveLoopbackPort,
     runVikunja,
@@ -134,6 +136,35 @@ describe("dev-vikunja launcher", () => {
 
         await expect(reserveLoopbackPort(net)).resolves.toBe(43127);
         expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it("binds to the preferred port when one is supplied", async () => {
+        const listenSpy = vi.fn((_options: unknown, callback: () => void) => callback());
+        const net = {
+            createServer: () => ({
+                listen: listenSpy,
+                once: vi.fn(),
+                address: () => ({ address: "127.0.0.1", port: 40000 }),
+                close: (callback?: (error?: unknown) => void) => callback?.(),
+            }),
+        };
+        await expect(reserveLoopbackPort(net, 40000)).resolves.toBe(40000);
+        expect(listenSpy).toHaveBeenCalledWith(expect.objectContaining({ port: 40000 }), expect.any(Function));
+    });
+
+    it("reports PORT_IN_USE when the preferred port is already taken", async () => {
+        const events = new EventEmitter();
+        const net = {
+            createServer: () => ({
+                listen: () => {
+                    events.emit("error", Object.assign(new Error("EADDRINUSE"), { code: "EADDRINUSE" }));
+                },
+                once: events.once.bind(events),
+                address: () => ({ port: 40000 }),
+                close: () => {},
+            }),
+        };
+        await expect(reserveLoopbackPort(net, 40000)).rejects.toMatchObject({ code: "PORT_IN_USE" });
     });
 
     it("reports actionable errors when required artifacts are missing", async () => {
@@ -348,4 +379,71 @@ describe("dev-vikunja launcher", () => {
     function pathsFor(repoRoot: string, runId: string) {
         return resolveVikunjaPaths(repoRoot, runId);
     }
+});
+
+describe("permanent API token", () => {
+    const routesJson = {
+        Body: {
+            tasks: { read_all: { path: "/tasks", method: "GET" }, create: { path: "/tasks", method: "POST" } },
+            projects: { read_all: { path: "/projects", method: "GET" } },
+        },
+    };
+    const tokenJson = { Body: { id: 7, title: "vcp-siyuan-dev", token: "cleartext-api-token", expires_at: "2100-01-01T00:00:00.000Z" } };
+
+    function ok(body: unknown) {
+        return { ok: true, status: 200, json: async () => body } as Response;
+    }
+    function bad(status: number) {
+        return { ok: false, status, json: async () => ({}) } as Response;
+    }
+
+    it("derives permissions from /routes and mints a permanent token", async () => {
+        const fetchImpl = vi.fn(async (url: string) => {
+            if (url.endsWith("/api/v2/routes")) return ok(routesJson);
+            if (url.endsWith("/api/v2/tokens")) return ok(tokenJson);
+            return bad(404);
+        });
+        const result = await createPermanentAPIToken({ origin: "http://127.0.0.1:13456", authToken: "login-jwt", fetchImpl: fetchImpl as never });
+        expect(result.token).toBe("cleartext-api-token");
+        expect(result.expiresAt).toBe("2100-01-01T00:00:00.000Z");
+        const tokenCall = (fetchImpl.mock.calls as unknown[][]).find(([url]) => String(url).endsWith("/api/v2/tokens")) as [string, { body: string }];
+        const sent = JSON.parse(tokenCall[1].body);
+        expect(sent.title).toBe("vcp-siyuan-dev");
+        expect(sent.expires_at).toBe("2100-01-01T00:00:00.000Z");
+        expect(sent.permissions.tasks).toEqual(["read_all", "create"]);
+        expect(sent.permissions.projects).toEqual(["read_all"]);
+    });
+
+    it("falls back to a broad permission set when /routes is unavailable", async () => {
+        const fetchImpl = vi.fn(async (url: string) => {
+            if (url.endsWith("/api/v2/routes")) return bad(500);
+            if (url.endsWith("/api/v2/tokens")) return ok(tokenJson);
+            return bad(404);
+        });
+        const result = await createPermanentAPIToken({ origin: "http://x", authToken: "t", fetchImpl: fetchImpl as never });
+        expect(result.token).toBe("cleartext-api-token");
+        const tokenCall = (fetchImpl.mock.calls as unknown[][]).find(([url]) => String(url).endsWith("/api/v2/tokens")) as [string, { body: string }];
+        const sent = JSON.parse(tokenCall[1].body);
+        expect(sent.permissions.tasks).toContain("read_all");
+        expect(sent.permissions.tasks_attachments).toContain("create");
+    });
+
+    it("throws API_TOKEN_FAILED when the token endpoint rejects the request", async () => {
+        const fetchImpl = vi.fn(async (url: string) => {
+            if (url.endsWith("/api/v2/routes")) return ok(routesJson);
+            if (url.endsWith("/api/v2/tokens")) return bad(400);
+            return bad(404);
+        });
+        await expect(createPermanentAPIToken({ origin: "http://x", authToken: "t", fetchImpl: fetchImpl as never }))
+            .rejects.toMatchObject({ code: "API_TOKEN_FAILED" });
+    });
+
+    it("permissionsFromRoutes unwraps the v2 envelope into group->permission lists", () => {
+        expect(permissionsFromRoutes(routesJson)).toEqual({ tasks: ["read_all", "create"], projects: ["read_all"] });
+    });
+
+    it("permissionsFromRoutes returns null for non-routes payloads", () => {
+        expect(permissionsFromRoutes({ foo: "bar" })).toBeNull();
+        expect(permissionsFromRoutes(null)).toBeNull();
+    });
 });

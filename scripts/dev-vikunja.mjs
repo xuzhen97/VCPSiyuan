@@ -7,7 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { OwnedProcesses } from "./dev-real.mjs";
+import { OwnedProcesses, parsePort } from "./dev-real.mjs";
 
 export class DevVikunjaError extends Error {
     constructor(code, message, cause) {
@@ -71,7 +71,7 @@ export function createTestCredentials(runId, randomBytes = crypto.randomBytes) {
     };
 }
 
-export function formatReadyOutput({ origin, apiOrigin, username, password, token, runDir }) {
+export function formatReadyOutput({ origin, apiOrigin, username, password, token, tokenNote = "n/a", runDir }) {
     const api = apiOrigin ?? `${origin}/api/v2`;
     return `Vikunja test environment ready
 
@@ -92,6 +92,9 @@ Password:
 
 Token:
   ${token}
+
+Token type:
+  ${tokenNote}
 
 Data:
   ${runDir}
@@ -137,27 +140,34 @@ export function checkVikunjaPrerequisites(paths, { exists = pathExists } = {}) {
     });
 }
 
-export function reserveLoopbackPort(netAdapter = net) {
+export function reserveLoopbackPort(netAdapter = net, preferredPort = null) {
     return new Promise((resolve, reject) => {
         const server = netAdapter.createServer();
         let settled = false;
-        const fail = (error) => {
+        const fail = (code, message, error) => {
             if (!settled) {
                 settled = true;
-                reject(new DevVikunjaError("PORT_ALLOCATION_FAILED", "Unable to allocate a loopback port.", error));
+                reject(new DevVikunjaError(code, message, error));
             }
         };
-        server.once("error", fail);
-        server.listen({ host: "127.0.0.1", port: 0 }, () => {
+        server.once("error", (error) => {
+            if (preferredPort && error?.code === "EADDRINUSE") {
+                fail("PORT_IN_USE", `Port ${preferredPort} is already in use. Free it or choose another via VIKUNJA_PORT.`, error);
+            } else {
+                fail("PORT_ALLOCATION_FAILED", "Unable to allocate a loopback port.", error);
+            }
+        });
+        const listenPort = preferredPort ?? 0;
+        server.listen({ host: "127.0.0.1", port: listenPort }, () => {
             const address = typeof server.address === "function" ? server.address() : server;
             const port = typeof address === "object" && address ? address.port : undefined;
             if (!Number.isInteger(port) || port < 1 || port > 65535) {
-                server.close(() => fail(new Error("Invalid ephemeral port")));
+                server.close(() => fail("PORT_ALLOCATION_FAILED", "Allocated an invalid port.", new Error("Invalid port")));
                 return;
             }
             server.close((error) => {
                 if (error) {
-                    fail(error);
+                    fail("PORT_ALLOCATION_FAILED", "Unable to close the probe socket.", error);
                     return;
                 }
                 if (!settled) {
@@ -255,6 +265,87 @@ export function loginToVikunja({ origin, username, password, fetchImpl = fetch }
     })();
 }
 
+// Local dev credentials should outlive a work session. Vikunja's v1 login JWT
+// is deliberately short-lived, so we mint a permanent API token instead. The API
+// requires expires_at (not null), so "permanent" means a far-future date.
+export const PERMANENT_TOKEN_EXPIRES_AT = "2100-01-01T00:00:00.000Z";
+
+// Parse a GET /api/v2/routes payload into { [group]: [permission, ...] } —
+// exactly the shape an API token's `permissions` field expects. The server only
+// reports (group, permission) pairs that are valid, so granting the union is
+// guaranteed to pass server-side validation.
+export function permissionsFromRoutes(json) {
+    const root = findRoutesMap(json);
+    if (!root) return null;
+    const permissions = {};
+    for (const [group, permMap] of Object.entries(root)) {
+        if (!permMap || typeof permMap !== "object" || Array.isArray(permMap)) continue;
+        const perms = Object.keys(permMap).filter(Boolean);
+        if (perms.length) permissions[group] = perms;
+    }
+    return Object.keys(permissions).length ? permissions : null;
+}
+
+// Locate the { [group]: { [permission]: {path, method} } } map, which the v2
+// envelope may wrap under body/data/Body or expose at the top level.
+function findRoutesMap(value, depth = 0) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || depth > 3) return null;
+    const entries = Object.entries(value);
+    const looksLikeRoutes =
+        entries.length > 0 &&
+        entries.every(
+            ([, v]) =>
+                v &&
+                typeof v === "object" &&
+                !Array.isArray(v) &&
+                Object.values(v).every((d) => d && typeof d === "object" && "path" in d),
+        );
+    if (looksLikeRoutes) return value;
+    for (const [, v] of entries) {
+        const found = findRoutesMap(v, depth + 1);
+        if (found) return found;
+    }
+    return null;
+}
+
+// Mint a long-lived API token for the authenticated user and return its
+// one-time cleartext value. Throws on failure so the caller can fall back to
+// the (short-lived) login token rather than break the whole launch.
+export async function createPermanentAPIToken({ origin, authToken, title = "vcp-siyuan-dev", fetchImpl = fetch }) {
+    let permissions = null;
+    try {
+        const routesResponse = await fetchImpl(`${origin}/api/v2/routes`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (routesResponse.ok) permissions = permissionsFromRoutes(await routesResponse.json());
+    } catch { /* non-fatal; fall back to a broad hardcoded set below */ }
+    if (!permissions) {
+        const crud = ["read_all", "read_one", "create", "create_bulk", "update", "delete"];
+        permissions = {
+            tasks: crud,
+            projects: crud,
+            labels: crud,
+            tasks_attachments: crud,
+            user: ["read", "read_one"],
+        };
+    }
+    const response = await fetchImpl(`${origin}/api/v2/tokens`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title, permissions, expires_at: PERMANENT_TOKEN_EXPIRES_AT }),
+    });
+    if (!response.ok) {
+        throw new DevVikunjaError("API_TOKEN_FAILED", `API token creation returned HTTP ${response.status}`);
+    }
+    const json = await response.json().catch(() => ({}));
+    const record = json?.Body ?? json?.body ?? json?.data ?? json;
+    const token = record?.token;
+    if (!token) {
+        throw new DevVikunjaError("API_TOKEN_FAILED", "API token response did not include a cleartext token");
+    }
+    return { token, expiresAt: record?.expires_at ?? PERMANENT_TOKEN_EXPIRES_AT, title: record?.title ?? title };
+}
+
 export async function cleanVikunjaRoot(paths, { fsImpl = fs, fsSync = fsNative, pidAlive: pidAliveImpl = pidAlive } = {}) {
     const resolved = path.resolve(paths.testRoot);
     const root = path.resolve(paths.repoRoot);
@@ -349,7 +440,8 @@ export async function runVikunja({
     process.on("SIGTERM", signalHandler);
 
     try {
-        const port = await reserveLoopbackPort(netAdapter);
+        const preferredPort = parsePort(process.env.VIKUNJA_PORT);
+        const port = await reserveLoopbackPort(netAdapter, preferredPort);
         const publicUrl = `http://127.0.0.1:${port}`;
         const origin = publicUrl;
         const api = `${origin}/api/v2`;
@@ -388,12 +480,25 @@ export async function runVikunja({
             password: credentials.password,
             fetchImpl,
         });
+        // The v1 login JWT is short-lived (~minutes). Mint a permanent API token
+        // so the local session (and the plugin config that holds it) stays valid
+        // for the whole dev session instead of 401-ing partway through.
+        let token = auth.token;
+        let tokenNote = "short-lived login token";
+        try {
+            const apiToken = await createPermanentAPIToken({ origin, authToken: auth.token, fetchImpl });
+            token = apiToken.token;
+            tokenNote = `permanent API token (expires ${apiToken.expiresAt})`;
+        } catch (error) {
+            writeLine(`Warning: could not mint a permanent API token (${error.message}); using the short-lived login token instead.`);
+        }
         writeLine(formatReadyOutput({
             origin,
             apiOrigin: api,
             username: credentials.username,
             password: credentials.password,
-            token: auth.token,
+            token,
+            tokenNote,
             runDir: paths.runDir,
         }));
         const result = {
@@ -401,7 +506,7 @@ export async function runVikunja({
             port,
             origin,
             credentials,
-            token: auth.token,
+            token,
             child: webChild,
             shutdown: stopAll,
         };

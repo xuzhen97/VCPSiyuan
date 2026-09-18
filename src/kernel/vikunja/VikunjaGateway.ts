@@ -6,6 +6,7 @@ import {
 import { HttpClient, HttpTransportError } from "../http/HttpClient.js";
 import { VikunjaV2Client } from "./VikunjaV2Client.js";
 import { mapTaskSummary } from "./mappers/taskMapper.js";
+import { isWriteCapableVersion } from "../../shared/vikunja-version.js";
 
 /**
  * Compatibility facade retained for callers that have not moved to the
@@ -43,7 +44,7 @@ export class VikunjaGateway {
                     : "0",
             taskPatch: true,
             projectPermissions: true,
-            writesAllowed: version === "v2.5.0",
+            writesAllowed: isWriteCapableVersion(version),
         };
     }
 

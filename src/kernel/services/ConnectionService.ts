@@ -4,6 +4,7 @@ import {
     VikunjaCredentials,
 } from "../../shared/contracts.js";
 import { publicError } from "../../shared/errors.js";
+import { isWriteCapableVersion } from "../../shared/vikunja-version.js";
 import { HttpTransportError } from "../http/HttpClient.js";
 import { VikunjaV2Client } from "../vikunja/VikunjaV2Client.js";
 
@@ -72,7 +73,8 @@ export class ConnectionService {
             );
             const attachments = response.data.task_attachments_enabled === true;
             const writesAllowed =
-                serverVersion === "v2.5.0" && this.options.taskPatch;
+                isWriteCapableVersion(serverVersion) &&
+                this.options.taskPatch;
             return {
                 ok: true,
                 data: {

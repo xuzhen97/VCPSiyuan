@@ -27,6 +27,56 @@ describe("TaskDialog", () => {
         expect(host.textContent).toContain(taskDialogI18n.titleRequired);
     });
 
+    it("locks the Block link and shows the existing link count for Block creates", () => {
+        const store = TaskDialogStore.create({
+            projectId: 2,
+            linkedBlockId: "block-1",
+            linkedBlockSummary: {
+                blockId: "block-1",
+                documentId: "doc-1",
+                title: "Intro",
+                selectedCount: 1,
+                linkedTaskCount: 2,
+            },
+        });
+        const dialog = new TaskDialog({
+            store,
+            onSave: vi.fn(),
+            onClose: vi.fn(),
+            title: "Create from Block",
+            i18n: taskDialogI18n,
+        });
+        const host = document.createElement("div");
+        dialog.mount(host);
+
+        const link = host.querySelector<HTMLInputElement>(
+            'input[name="blockLink"]',
+        );
+        expect(link).not.toBeNull();
+        expect(link!.checked).toBe(true);
+        // The Block entry point owns the link, so it cannot be silently dropped.
+        expect(link!.disabled).toBe(true);
+        expect(host.textContent).toContain(taskDialogI18n.blockLinkLocked);
+        expect(host.textContent).toContain(taskDialogI18n.blockLinkedCount(2));
+        expect(store.getBlockLink().enabled).toBe(true);
+    });
+
+    it("omits the Block link control entirely for a plain create", () => {
+        const store = TaskDialogStore.create({ projectId: 2 });
+        const dialog = new TaskDialog({
+            store,
+            onSave: vi.fn(),
+            onClose: vi.fn(),
+            title: "New task",
+            i18n: taskDialogI18n,
+        });
+        const host = document.createElement("div");
+        dialog.mount(host);
+
+        expect(host.querySelector('input[name="blockLink"]')).toBeNull();
+        expect(host.textContent).not.toContain(taskDialogI18n.blockLinkLabel);
+    });
+
     it("asks before discarding a dirty draft and only closes when confirmed", async () => {
         const store = TaskDialogStore.create({ projectId: 2 });
         store.setField("title", "Draft");

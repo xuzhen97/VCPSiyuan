@@ -113,6 +113,8 @@
   "repeatMonth": "month(s)",
   "preservedRepeat": "Server rule (read-only)",
   "blockLinkLabel": "Link current Block",
+  "blockLinkLocked": "This task will be linked to the Block automatically",
+  "blockLinkedCount": "Block already linked to {count} task(s)",
   "blockLinkAfterCreateFailed": "Task created, but Block linking failed; retry the link step",
   "projectRequired": "A writable project is required",
   "projectNotWritable": "The selected project is not writable",

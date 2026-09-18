@@ -27,6 +27,8 @@ export interface TaskDialogI18n {
     repeatMonth: string;
     preservedRepeat: string;
     blockLinkLabel: string;
+    blockLinkLocked: string;
+    blockLinkedCount: (count: number) => string;
     projectRequired: string;
     projectNotWritable: string;
     conflict: string;
@@ -164,9 +166,22 @@ export class TaskDialog {
         const form = document.createElement("form");
         form.className = "vcp-siyuan-task-dialog";
 
+        const header = document.createElement("div");
+        header.className = "vcp-siyuan-task-dialog__header";
         const heading = document.createElement("h2");
         heading.textContent = this.options.title;
-        form.append(heading);
+        header.append(heading);
+        const closeButton = document.createElement("button");
+        closeButton.type = "button";
+        closeButton.className =
+            "b3-button b3-button--text vcp-siyuan-task-dialog__close";
+        closeButton.setAttribute("aria-label", this.options.i18n.cancel);
+        closeButton.textContent = "×";
+        closeButton.addEventListener("click", () => {
+            void this.close();
+        });
+        header.append(closeButton);
+        form.append(header);
 
         const i18n = this.options.i18n;
         if (this.conflict) {
@@ -176,6 +191,7 @@ export class TaskDialog {
             notice.textContent = i18n.conflict;
             const reload = document.createElement("button");
             reload.type = "button";
+            reload.className = "b3-button b3-button--text";
             reload.textContent = i18n.reload;
             reload.addEventListener("click", () => {
                 void Promise.resolve(this.conflict?.onReload()).then(() => {
@@ -185,6 +201,7 @@ export class TaskDialog {
             });
             const review = document.createElement("button");
             review.type = "button";
+            review.className = "b3-button b3-button--text";
             review.textContent = i18n.review;
             review.addEventListener("click", () => {
                 void Promise.resolve(this.conflict?.onReview()).then(() => {
@@ -204,6 +221,7 @@ export class TaskDialog {
         this.titleInput.type = "text";
         this.titleInput.name = "title";
         this.titleInput.required = true;
+        this.titleInput.className = "b3-text-field";
         this.titleInput.value = draft.title;
         this.titleInput.addEventListener("input", () =>
             store.setField("title", this.titleInput?.value ?? ""),
@@ -214,6 +232,7 @@ export class TaskDialog {
             const project = document.createElement("select");
             project.name = "projectId";
             project.required = true;
+            project.className = "b3-text-field";
             for (const item of this.options.projects) {
                 const option = document.createElement("option");
                 option.value = String(item.id);
@@ -269,6 +288,7 @@ export class TaskDialog {
         priority.max = "5";
         priority.step = "1";
         priority.value = String(draft.priority);
+        priority.className = "b3-text-field";
         priority.addEventListener("input", () =>
             store.setField("priority", Number(priority.value)),
         );
@@ -278,6 +298,7 @@ export class TaskDialog {
             const labels = document.createElement("select");
             labels.name = "labels";
             labels.multiple = true;
+            labels.className = "b3-text-field";
             labels.size = Math.min(5, Math.max(2, this.options.labels.length));
             const selected = new Set(draft.labelIds);
             for (const item of this.options.labels) {
@@ -299,6 +320,7 @@ export class TaskDialog {
             const search = document.createElement("input");
             search.type = "search";
             search.name = "assigneeSearch";
+            search.className = "b3-text-field";
             search.placeholder = i18n.assigneeSearchPlaceholder;
             search.addEventListener("input", () => {
                 if (this.assigneeSearchTimer !== undefined)
@@ -328,6 +350,7 @@ export class TaskDialog {
             const assignees = document.createElement("select");
             assignees.name = "assignees";
             assignees.multiple = true;
+            assignees.className = "b3-text-field";
             assignees.size = Math.min(
                 5,
                 Math.max(2, this.options.assignees.length),
@@ -370,11 +393,13 @@ export class TaskDialog {
                 input.type = "datetime-local";
                 input.name = "reminder";
                 input.value = toDateInput(reminder.at);
+                input.className = "b3-text-field";
                 input.addEventListener("change", () => {
                     store.setReminders(readReminderInputs(reminders));
                 });
                 const remove = document.createElement("button");
                 remove.type = "button";
+                remove.className = "b3-button b3-button--text";
                 remove.textContent = i18n.removeReminder;
                 remove.addEventListener("click", () => {
                     row.remove();
@@ -403,26 +428,46 @@ export class TaskDialog {
         form.append(this.field(i18n.repeatLabel, repeat));
 
         const blockLink = store.getBlockLink();
-        const blockLinkControl = document.createElement("div");
-        blockLinkControl.className = "vcp-siyuan-task-dialog__block-link";
-        const link = document.createElement("input");
-        link.type = "checkbox";
-        link.name = "blockLink";
-        link.checked = blockLink.enabled;
-        link.disabled = !blockLink.blockId;
-        link.addEventListener("change", () => store.setBlockLink(link.checked));
-        blockLinkControl.append(link);
-        if (blockLink.summary) {
-            const summary = document.createElement("span");
-            summary.className = "vcp-siyuan-task-dialog__block-context";
-            const title = blockLink.summary.title || blockLink.summary.blockId;
-            const count = blockLink.summary.selectedCount
-                ? ` (${blockLink.summary.selectedCount})`
-                : "";
-            summary.textContent = `${title} · ${blockLink.summary.documentId}${count}`;
-            blockLinkControl.append(summary);
+        // Only the Block entry point carries a link; the dock's plain "new task"
+        // does not. Rendering the control only in the first case keeps the two
+        // flows visually distinct instead of showing a dead checkbox.
+        if (blockLink.blockId) {
+            const blockLinkControl = document.createElement("div");
+            blockLinkControl.className =
+                "vcp-siyuan-task-dialog__block-link";
+            const link = document.createElement("input");
+            link.type = "checkbox";
+            link.name = "blockLink";
+            link.checked = blockLink.enabled;
+            // The entry point decides the link, not the user. Locking the control
+            // stops the Block command from silently degrading into a plain create
+            // that drops the link with no feedback.
+            link.disabled = true;
+            blockLinkControl.append(link);
+            if (blockLink.summary) {
+                const summary = document.createElement("span");
+                summary.className = "vcp-siyuan-task-dialog__block-context";
+                const title =
+                    blockLink.summary.title || blockLink.summary.blockId;
+                const count = blockLink.summary.selectedCount
+                    ? ` (${blockLink.summary.selectedCount})`
+                    : "";
+                summary.textContent = `${title} · ${blockLink.summary.documentId}${count}`;
+                blockLinkControl.append(summary);
+            }
+            const locked = document.createElement("span");
+            locked.className = "vcp-siyuan-task-dialog__block-note";
+            locked.textContent = i18n.blockLinkLocked;
+            blockLinkControl.append(locked);
+            const linkedCount = blockLink.summary?.linkedTaskCount ?? 0;
+            if (linkedCount > 0) {
+                const linked = document.createElement("span");
+                linked.className = "vcp-siyuan-task-dialog__block-note";
+                linked.textContent = i18n.blockLinkedCount(linkedCount);
+                blockLinkControl.append(linked);
+            }
+            form.append(this.field(i18n.blockLinkLabel, blockLinkControl));
         }
-        form.append(this.field(i18n.blockLinkLabel, blockLinkControl));
 
         this.renderAttachments(form, i18n);
 
@@ -442,12 +487,14 @@ export class TaskDialog {
         actions.className = "vcp-siyuan-task-dialog__actions";
         const cancel = document.createElement("button");
         cancel.type = "button";
+        cancel.className = "b3-button b3-button--text";
         cancel.textContent = i18n.cancel;
         cancel.addEventListener("click", () => {
             void this.close();
         });
         const save = document.createElement("button");
         save.type = "submit";
+        save.className = "b3-button";
         save.textContent = i18n.save;
         actions.append(cancel, save);
         form.append(error, actions);
@@ -591,6 +638,7 @@ export class TaskDialog {
         input.type = "datetime-local";
         input.name = name;
         input.value = toDateInput(value);
+        input.className = "b3-text-field";
         input.addEventListener("change", () => onChange(input.value));
         return input;
     }
@@ -604,6 +652,7 @@ export class TaskDialog {
         const current = store.getRepeat();
         const unit = document.createElement("select");
         unit.name = "repeatUnit";
+        unit.className = "b3-text-field";
         const options: Array<[string, string]> = [
             ["none", i18n.repeatNone],
             ["day", i18n.repeatDay],
@@ -632,6 +681,7 @@ export class TaskDialog {
         const every = document.createElement("input");
         every.type = "number";
         every.name = "repeatEvery";
+        every.className = "b3-text-field";
         every.min = "1";
         every.step = "1";
         every.value = current.kind === "editable" ? String(current.every) : "1";

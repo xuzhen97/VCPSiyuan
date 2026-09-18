@@ -1,6 +1,7 @@
 import type * as kernel from "siyuan/kernel";
 import { SiYuanHttpClient } from "./http/SiYuanHttpClient.js";
 import { VikunjaCredentials } from "../shared/contracts.js";
+import { isWriteCapableVersion } from "../shared/vikunja-version.js";
 import { registerVikunjaRpc } from "./rpc/registerVikunjaRpc.js";
 import { ConnectionService } from "./services/ConnectionService.js";
 import { TaskQueryService } from "./services/TaskQueryService.js";
@@ -61,7 +62,7 @@ export class KernelPlugin {
                     ? response.data.version
                     : undefined;
             return {
-                writesAllowed: version === "v2.5.0",
+                writesAllowed: isWriteCapableVersion(version),
                 attachments: response.data.task_attachments_enabled === true,
             };
         };

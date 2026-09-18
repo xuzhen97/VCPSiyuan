@@ -15,6 +15,8 @@ export interface BlockLinkSummary {
     documentId: string;
     title?: string;
     selectedCount?: number;
+    /** Tasks already linked to this Block, so appending is visible up front. */
+    linkedTaskCount?: number;
 }
 
 export interface BlockLinkState {
@@ -143,10 +145,6 @@ export class TaskDialogStore {
     setRepeat(repeat: TaskDetail["repeat"]): void {
         this.repeat = repeat;
         this.dirty.add("repeat");
-    }
-
-    setBlockLink(enabled: boolean): void {
-        this.blockLink.enabled = enabled && Boolean(this.blockLink.blockId);
     }
 
     setAvailableAssignees(assignees: UserRef[]): void {

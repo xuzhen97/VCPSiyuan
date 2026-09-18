@@ -13,3 +13,6 @@ kernel.js
 .tmp
 .playwright-mcp
 .superpowers
+# 根目录遗留的调试截图（Playwright/手工产出，勿入库）
+/dev-all-boot.png
+/dev-real-dock-loaded.png
