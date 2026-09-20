@@ -15,6 +15,31 @@ describe("shared bytes", () => {
         );
     });
 
+    it("round-trips payloads large enough to expose quadratic encoding", () => {
+        // A 1.3 MB attachment hung for minutes because `result +=` copies the
+        // whole string per character in goja (the Kernel runtime). Sizes here
+        // are deliberately not multiples of three, so the tail padding stays
+        // covered at every scale.
+        for (const size of [1, 2, 3, 4, 65536, 1300001]) {
+            const bytes = new Uint8Array(size);
+            for (let index = 0; index < size; index += 1) {
+                bytes[index] = (index * 31) & 0xff;
+            }
+            const encoded = encodeBase64(bytes);
+            expect(encoded.length).toBe(Math.ceil(size / 3) * 4);
+            const decoded = decodeBase64(encoded);
+            expect(decoded.byteLength).toBe(size);
+            let mismatch = -1;
+            for (let index = 0; index < size; index += 1) {
+                if (decoded[index] !== bytes[index]) {
+                    mismatch = index;
+                    break;
+                }
+            }
+            expect(mismatch).toBe(-1);
+        }
+    });
+
     it("throws on invalid Base64 instead of returning garbage", () => {
         // @ts-expect-error deliberately malformed input
         expect(() => decodeBase64(undefined)).toThrow();

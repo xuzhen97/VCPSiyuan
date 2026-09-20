@@ -13,22 +13,40 @@
 const BASE64_ALPHABET =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+// 255 marks "not a Base64 digit". Decoding scans a string per character, so a
+// 256-entry table keeps it O(n) instead of an `indexOf` rescan per character.
+const BASE64_DIGITS = (() => {
+    const table = new Uint8Array(256);
+    table.fill(255);
+    for (let index = 0; index < BASE64_ALPHABET.length; index += 1) {
+        table[BASE64_ALPHABET.charCodeAt(index)] = index;
+    }
+    return table;
+})();
+
 export function encodeBase64(bytes: Uint8Array): string {
-    let result = "";
+    // Collect 4-character groups and join once. Appending with `result += c`
+    // inside the loop copies the entire string every iteration: V8 papers over
+    // that with rope strings, but the Kernel runs in goja, so a 1.3 MB
+    // attachment grew quadratically and stalled the upload for minutes.
+    const groups = new Array<string>(Math.ceil(bytes.length / 3));
+    let offset = 0;
     for (let index = 0; index < bytes.length; index += 3) {
         const first = bytes[index];
         const hasSecond = index + 1 < bytes.length;
         const hasThird = index + 2 < bytes.length;
         const second = hasSecond ? bytes[index + 1] : 0;
         const third = hasThird ? bytes[index + 2] : 0;
-        result += BASE64_ALPHABET[first >> 2];
-        result += BASE64_ALPHABET[((first & 0x03) << 4) | (second >> 4)];
-        result += hasSecond
-            ? BASE64_ALPHABET[((second & 0x0f) << 2) | (third >> 6)]
-            : "=";
-        result += hasThird ? BASE64_ALPHABET[third & 0x3f] : "=";
+        groups[offset] =
+            BASE64_ALPHABET[first >> 2] +
+            BASE64_ALPHABET[((first & 0x03) << 4) | (second >> 4)] +
+            (hasSecond
+                ? BASE64_ALPHABET[((second & 0x0f) << 2) | (third >> 6)]
+                : "=") +
+            (hasThird ? BASE64_ALPHABET[third & 0x3f] : "=");
+        offset += 1;
     }
-    return result;
+    return groups.join("");
 }
 
 export function decodeBase64(value: string): Uint8Array {
@@ -38,8 +56,8 @@ export function decodeBase64(value: string): Uint8Array {
     let bits = 0;
     let offset = 0;
     for (let index = 0; index < compact.length; index += 1) {
-        const digit = BASE64_ALPHABET.indexOf(compact[index]);
-        if (digit < 0) throw new Error("Invalid Base64");
+        const digit = BASE64_DIGITS[compact.charCodeAt(index)];
+        if (digit > 63) throw new Error("Invalid Base64");
         buffer = (buffer << 6) | digit;
         bits += 6;
         if (bits >= 8) {
