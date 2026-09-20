@@ -3,25 +3,27 @@ import { Project, ProjectDeleteImpact } from "../../shared/project.js";
 export interface ProjectManagerDialogI18n {
     title: string;
     impact: (open: number, completed: number, descendants: number) => string;
+    impactIncomplete: string;
     confirmLabel: string;
     delete: string;
     cancel: string;
+    close: string;
     save: string;
     search: string;
     create: string;
     edit: string;
+    empty: string;
+    noMatches: string;
     titleLabel: string;
     descriptionLabel: string;
     colorLabel: string;
     parentLabel: string;
     archivedLabel: string;
     projectPath: (path: string) => string;
-    manageLabels: string;
 }
 
 export interface ProjectManagerDialogOptions {
     projects?: Project[];
-    selectedProject?: Project;
     impact?: ProjectDeleteImpact;
     i18n: ProjectManagerDialogI18n;
     onCreate?: (draft: {
@@ -35,10 +37,16 @@ export interface ProjectManagerDialogOptions {
         draft: Partial<Project>,
     ) => void | Promise<void>;
     onPreviewDelete?: (projectId: number) => void | Promise<void>;
-    onOpenLabels?: () => void | Promise<void>;
     onDelete?: (confirmationTitle: string) => void | Promise<void>;
+    onClose?: () => void;
 }
 
+/**
+ * Project management page.
+ *
+ * Labels have their own page (`LabelManagerDialog`) rather than a link from
+ * here, so neither list is buried behind the other.
+ */
 export class ProjectManagerDialog {
     private readonly options: ProjectManagerDialogOptions;
     private container?: HTMLElement;
@@ -67,89 +75,137 @@ export class ProjectManagerDialog {
     private render(): void {
         if (!this.container) return;
         this.container.replaceChildren();
-        const { i18n } = this.options;
         const root = document.createElement("section");
         root.className = "vcp-siyuan-project-manager";
-        const heading = document.createElement("h2");
-        heading.textContent = i18n.title;
-        root.append(heading);
+        root.append(this.header());
+
+        // A delete confirmation replaces the list: showing both at once made the
+        // impact summary look like a permanent part of the page.
         if (this.impact) {
-            const selected = document.createElement("p");
-            selected.textContent = this.impact.project.title;
-            selected.dataset.state = "impact-target";
-            root.append(selected);
-        }
-        if (!this.options.projects && this.impact) {
             this.appendImpact(root, this.impact);
             this.container.append(root);
             return;
         }
 
+        const projects = this.options.projects ?? [];
+        const list = document.createElement("div");
+        list.className = "vcp-siyuan-project-manager__list";
+        const depths = projectDepths(projects);
+        for (const project of projects) {
+            list.append(this.row(project, depths.get(project.id) ?? 0));
+        }
+        const empty = document.createElement("p");
+        empty.className = "vcp-siyuan-project-manager__empty";
+        empty.dataset.state = "empty";
+        empty.hidden = projects.length > 0;
+        empty.textContent = this.options.i18n.empty;
+        list.append(empty);
+
+        root.append(this.toolbar(list, projects.length), list);
+        this.container.append(root);
+    }
+
+    private header(): HTMLElement {
+        const { i18n } = this.options;
+        const header = document.createElement("header");
+        header.className = "vcp-siyuan-project-manager__header";
+        const heading = document.createElement("h2");
+        heading.textContent = i18n.title;
+        const close = document.createElement("button");
+        close.type = "button";
+        close.dataset.action = "close";
+        close.className = "b3-button b3-button--text";
+        close.textContent = i18n.close;
+        close.addEventListener("click", () => this.options.onClose?.());
+        header.append(heading, close);
+        return header;
+    }
+
+    private toolbar(list: HTMLElement, total: number): HTMLElement {
+        const { i18n } = this.options;
+        const toolbar = document.createElement("div");
+        toolbar.className = "vcp-siyuan-project-manager__toolbar";
         const search = document.createElement("input");
         search.type = "search";
         search.placeholder = i18n.search;
+        search.dataset.action = "search";
+        const noMatches = document.createElement("p");
+        noMatches.className = "vcp-siyuan-project-manager__empty";
+        noMatches.dataset.state = "no-matches";
+        noMatches.textContent = i18n.noMatches;
+        noMatches.hidden = true;
         search.addEventListener("input", () => {
             const query = search.value.trim().toLocaleLowerCase();
-            for (const row of root.querySelectorAll<HTMLElement>(
+            let visible = 0;
+            for (const row of list.querySelectorAll<HTMLElement>(
                 "[data-project-id]",
             )) {
                 const text = row.textContent ?? "";
-                row.hidden =
-                    query.length > 0 &&
-                    !text.toLocaleLowerCase().includes(query);
+                const matches =
+                    query.length === 0 ||
+                    text.toLocaleLowerCase().includes(query);
+                row.hidden = !matches;
+                if (matches) visible += 1;
             }
+            noMatches.hidden = !(total > 0 && visible === 0);
         });
-        root.append(search);
-
-        const list = document.createElement("div");
-        list.className = "vcp-siyuan-project-manager__list";
-        const projects = this.options.projects ?? [];
-        for (const project of projects) {
-            const row = document.createElement("div");
-            row.dataset.projectId = String(project.id);
-            row.className = "vcp-siyuan-project-manager__row";
-            const label = document.createElement("span");
-            label.textContent = i18n.projectPath(project.title);
-            row.append(label);
-            const edit = document.createElement("button");
-            edit.type = "button";
-            edit.dataset.action = "edit-project";
-            edit.textContent = i18n.edit;
-            edit.disabled = !isWritable(project.maxPermission);
-            edit.addEventListener("click", () => this.renderEditor(project));
-            row.append(edit);
-            const remove = document.createElement("button");
-            remove.type = "button";
-            remove.dataset.action = "delete-project";
-            remove.textContent = i18n.delete;
-            remove.disabled = !isAdmin(project.maxPermission);
-            remove.addEventListener(
-                "click",
-                () => void this.options.onPreviewDelete?.(project.id),
-            );
-            row.append(remove);
-            list.append(row);
-        }
-        root.append(list);
         const create = document.createElement("button");
         create.type = "button";
-        create.textContent = i18n.create;
         create.dataset.action = "create-project";
+        create.className = "b3-button b3-button--outline";
+        create.textContent = i18n.create;
         create.addEventListener("click", () => this.renderEditor());
-        root.append(create);
-        if (this.options.onOpenLabels) {
-            const labels = document.createElement("button");
-            labels.type = "button";
-            labels.dataset.action = "manage-labels";
-            labels.textContent = i18n.manageLabels;
-            labels.addEventListener(
-                "click",
-                () => void this.options.onOpenLabels?.(),
-            );
-            root.append(labels);
+        toolbar.append(search, create);
+        list.append(noMatches);
+        return toolbar;
+    }
+
+    private row(project: Project, depth: number): HTMLElement {
+        const { i18n } = this.options;
+        const row = document.createElement("div");
+        row.dataset.projectId = String(project.id);
+        row.className = "vcp-siyuan-project-manager__row";
+        row.style.setProperty("--depth", String(depth));
+
+        const swatch = document.createElement("span");
+        swatch.className = "vcp-siyuan-project-manager__swatch";
+        swatch.style.background = normalizeColor(project.color);
+        row.append(swatch);
+
+        const name = document.createElement("span");
+        name.className = "vcp-siyuan-project-manager__name";
+        name.textContent = i18n.projectPath(project.title);
+        row.append(name);
+
+        if (project.archived) {
+            const archived = document.createElement("small");
+            archived.className = "vcp-siyuan-project-manager__meta";
+            archived.textContent = i18n.archivedLabel;
+            row.append(archived);
         }
-        if (this.impact) this.appendImpact(root, this.impact);
-        this.container.append(root);
+
+        const actions = document.createElement("span");
+        actions.className = "vcp-siyuan-project-manager__row-actions";
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.dataset.action = "edit-project";
+        edit.className = "b3-button b3-button--text";
+        edit.textContent = i18n.edit;
+        edit.disabled = !isWritable(project.maxPermission);
+        edit.addEventListener("click", () => this.renderEditor(project));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.dataset.action = "delete-project";
+        remove.className = "b3-button b3-button--text";
+        remove.textContent = i18n.delete;
+        remove.disabled = !isAdmin(project.maxPermission);
+        remove.addEventListener(
+            "click",
+            () => void this.options.onPreviewDelete?.(project.id),
+        );
+        actions.append(edit, remove);
+        row.append(actions);
+        return row;
     }
 
     private renderEditor(project?: Project): void {
@@ -157,18 +213,25 @@ export class ProjectManagerDialog {
         const { i18n } = this.options;
         const form = document.createElement("form");
         form.className = "vcp-siyuan-project-manager__editor";
+        const heading = document.createElement("h3");
+        heading.textContent = project ? i18n.edit : i18n.create;
+        form.append(heading);
+
         const title = document.createElement("input");
         title.required = true;
         title.value = project?.title ?? "";
         form.append(this.labeled(i18n.titleLabel, title));
+
         const description = document.createElement("textarea");
         description.value = project?.descriptionMarkdown ?? "";
         form.append(this.labeled(i18n.descriptionLabel, description));
+
         const color = document.createElement("input");
         color.type = "color";
         color.value = normalizeColor(project?.color);
         color.dataset.projectColor = color.value;
         form.append(this.labeled(i18n.colorLabel, color));
+
         const parent = document.createElement("select");
         const none = document.createElement("option");
         none.value = "";
@@ -183,14 +246,21 @@ export class ProjectManagerDialog {
             parent.append(option);
         }
         form.append(this.labeled(i18n.parentLabel, parent));
-        const save = document.createElement("button");
-        save.type = "submit";
-        save.textContent = i18n.save;
+
+        const actions = document.createElement("div");
+        actions.className = "vcp-siyuan-project-manager__actions";
         const cancel = document.createElement("button");
         cancel.type = "button";
+        cancel.className = "b3-button";
         cancel.textContent = i18n.cancel;
         cancel.addEventListener("click", () => this.render());
-        form.append(save, cancel);
+        const save = document.createElement("button");
+        save.type = "submit";
+        save.className = "b3-button b3-button--outline";
+        save.textContent = i18n.save;
+        actions.append(cancel, save);
+        form.append(actions);
+
         form.addEventListener("submit", (event) => {
             event.preventDefault();
             const draft = {
@@ -212,6 +282,10 @@ export class ProjectManagerDialog {
         const { i18n } = this.options;
         const section = document.createElement("section");
         section.className = "vcp-siyuan-project-manager__impact";
+        const heading = document.createElement("h3");
+        heading.textContent = impact.project.title;
+        heading.dataset.state = "impact-target";
+        section.append(heading);
         const text = document.createElement("p");
         text.textContent = i18n.impact(
             impact.openTaskCount,
@@ -219,20 +293,39 @@ export class ProjectManagerDialog {
             impact.descendantProjects.length,
         );
         section.append(text);
+        if (!impact.complete) {
+            const warning = document.createElement("p");
+            warning.className = "vcp-siyuan-project-manager__warning";
+            warning.textContent = i18n.impactIncomplete;
+            section.append(warning);
+        }
         const confirmation = document.createElement("input");
         confirmation.placeholder = impact.project.title;
         confirmation.setAttribute("aria-label", i18n.confirmLabel);
         section.append(confirmation);
+        const actions = document.createElement("div");
+        actions.className = "vcp-siyuan-project-manager__actions";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "b3-button";
+        cancel.dataset.action = "cancel-impact";
+        cancel.textContent = i18n.cancel;
+        cancel.addEventListener("click", () => {
+            this.impact = undefined;
+            this.render();
+        });
         const remove = document.createElement("button");
         remove.type = "button";
         remove.dataset.action = "delete";
+        remove.className = "b3-button b3-button--outline";
         remove.textContent = i18n.delete;
         remove.disabled = !impact.complete;
         remove.addEventListener("click", () => {
             if (confirmation.value === impact.project.title)
                 void this.options.onDelete?.(confirmation.value);
         });
-        section.append(remove);
+        actions.append(cancel, remove);
+        section.append(actions);
         root.append(section);
     }
 
@@ -242,6 +335,28 @@ export class ProjectManagerDialog {
         label.append(input);
         return label;
     }
+}
+
+/** Nesting depth per project so children render indented under their parent. */
+function projectDepths(projects: Project[]): Map<number, number> {
+    const byId = new Map(projects.map((project) => [project.id, project]));
+    const depths = new Map<number, number>();
+    for (const project of projects) {
+        let depth = 0;
+        let current = project;
+        const seen = new Set<number>([project.id]);
+        while (current.parentProjectId) {
+            const parent = byId.get(current.parentProjectId);
+            // A cycle can only come from inconsistent server data; stop rather
+            // than walk forever.
+            if (!parent || seen.has(parent.id)) break;
+            seen.add(parent.id);
+            depth += 1;
+            current = parent;
+        }
+        depths.set(project.id, depth);
+    }
+    return depths;
 }
 
 function normalizeColor(value: string | null | undefined): string {

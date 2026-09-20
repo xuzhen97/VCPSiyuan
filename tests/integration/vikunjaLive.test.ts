@@ -314,9 +314,11 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
         const taskId = created.data.id;
 
         const label = await stack.labels.create(credentials, {
-            title: `live label ${suffix}`,
-            descriptionMarkdown: "",
-            color: null,
+            draft: {
+                title: `live label ${suffix}`,
+                descriptionMarkdown: "",
+                color: null,
+            },
         });
         expect(label.ok).toBe(true);
         if (!label.ok) return;
@@ -422,9 +424,11 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
         expect(project.data.isInboxProject).toBe(true);
 
         const label = await stack.labels.create(credentials, {
-            title: `live impact ${suffix}`,
-            descriptionMarkdown: "",
-            color: null,
+            draft: {
+                title: `live impact ${suffix}`,
+                descriptionMarkdown: "",
+                color: null,
+            },
         });
         expect(label.ok).toBe(true);
         if (!label.ok) return;
@@ -456,42 +460,45 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
 
     it("creates, reparents, and deletes a project", async () => {
         const parent = await stack.projects.create(credentials, {
-            title: `live parent ${suffix}`,
-            descriptionMarkdown: "",
-            color: null,
-            parentProjectId: null,
+            draft: {
+                title: `live parent ${suffix}`,
+                descriptionMarkdown: "",
+                color: null,
+                parentProjectId: null,
+            },
         });
         expect(parent.ok).toBe(true);
         if (!parent.ok) return;
         expect(parent.data.parentProjectId).toBeNull();
 
         const child = await stack.projects.create(credentials, {
-            title: `live child ${suffix}`,
-            descriptionMarkdown: "",
-            color: null,
-            parentProjectId: parent.data.id,
+            draft: {
+                title: `live child ${suffix}`,
+                descriptionMarkdown: "",
+                color: null,
+                parentProjectId: parent.data.id,
+            },
         });
         expect(child.ok).toBe(true);
         if (!child.ok) return;
         expect(child.data.parentProjectId).toBe(parent.data.id);
 
-        const renamed = await stack.projects.patch(credentials, child.data.id, {
-            title: `live child renamed ${suffix}`,
+        const renamed = await stack.projects.patch(credentials, {
+            projectId: child.data.id,
+            draft: { title: `live child renamed ${suffix}` },
         });
         expect(renamed.ok).toBe(true);
 
-        const deleted = await stack.projects.delete(
-            credentials,
-            child.data.id,
-            `live child renamed ${suffix}`,
-        );
+        const deleted = await stack.projects.delete(credentials, {
+            projectId: child.data.id,
+            expectedTitle: `live child renamed ${suffix}`,
+        });
         expect(deleted.ok).toBe(true);
 
-        const parentDeleted = await stack.projects.delete(
-            credentials,
-            parent.data.id,
-            `live parent ${suffix}`,
-        );
+        const parentDeleted = await stack.projects.delete(credentials, {
+            projectId: parent.data.id,
+            expectedTitle: `live parent ${suffix}`,
+        });
         expect(parentDeleted.ok).toBe(true);
     });
 });

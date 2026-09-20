@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { TaskDialog } from "../../src/frontend/dialogs/TaskDialog.js";
 import { TaskDialogStore } from "../../src/frontend/stores/TaskDialogStore.js";
+import { AttachmentStore } from "../../src/frontend/stores/AttachmentStore.js";
 import { taskDialogI18n } from "../helpers/pluginI18n.js";
 
 describe("TaskDialog", () => {
@@ -354,5 +355,36 @@ describe("TaskDialog", () => {
         await dialog.close();
         expect(confirmDiscard).not.toHaveBeenCalled();
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("previews a queued image attachment before the task is saved", () => {
+        const onAttachmentPreview = vi.fn();
+        const attachmentStore = new AttachmentStore({
+            controller: { call: vi.fn() } as never,
+            effectiveLimitBytes: 30 * 1024 * 1024,
+        });
+        attachmentStore.queue([
+            new File(["x"], "draft.png", { type: "image/png" }),
+        ]);
+        const dialog = new TaskDialog({
+            store: TaskDialogStore.create({ projectId: 2 }),
+            onSave: vi.fn(),
+            onClose: vi.fn(),
+            title: "Create",
+            i18n: taskDialogI18n,
+            attachmentStore,
+            onAttachmentPreview,
+        });
+        const host = document.createElement("div");
+        dialog.mount(host);
+
+        const preview = host.querySelector<HTMLButtonElement>(
+            "button[data-action='preview']",
+        );
+        expect(preview?.textContent).toBe(
+            taskDialogI18n.attachmentList.preview,
+        );
+        preview?.click();
+        expect(onAttachmentPreview).toHaveBeenCalledWith("file-1");
     });
 });

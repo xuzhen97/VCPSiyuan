@@ -6,6 +6,11 @@ import {
 } from "../../shared/project.js";
 import { Page } from "../../shared/pagination.js";
 import { RpcResult, VikunjaCredentials } from "../../shared/contracts.js";
+import {
+    CreateProjectRequest,
+    DeleteProjectRequest,
+    PatchProjectRequest,
+} from "../../shared/rpc.js";
 import { PublicError, publicError } from "../../shared/errors.js";
 import { ProjectGateway } from "../vikunja/ProjectGateway.js";
 
@@ -69,40 +74,50 @@ export class ProjectService {
         );
     }
 
+    /**
+     * Every write takes the RPC request envelope, not its fields: the binding
+     * hands over `request` as a single argument, so a positional signature read
+     * `{ draft }` as the draft and sent an empty body to Vikunja.
+     */
     async create(
         credentials: VikunjaCredentials,
-        draft: ProjectDraft,
+        request: CreateProjectRequest,
     ): Promise<RpcResult<Project>> {
         return this.writeSafe(credentials, () =>
-            this.projects.create(credentials, draft),
+            this.projects.create(credentials, request.draft),
         );
     }
 
     async patch(
         credentials: VikunjaCredentials,
-        projectId: number,
-        draft: Partial<ProjectDraft>,
+        request: PatchProjectRequest,
     ): Promise<RpcResult<Project>> {
         return this.writeSafe(credentials, () =>
-            this.projects.patch(credentials, projectId, draft),
+            this.projects.patch(
+                credentials,
+                request.projectId,
+                request.draft,
+            ),
         );
     }
 
     async delete(
         credentials: VikunjaCredentials,
-        projectId: number,
-        expectedTitle: string,
+        request: DeleteProjectRequest,
     ): Promise<RpcResult<void>> {
         return this.writeSafe(credentials, async () => {
-            const current = await this.projects.get(credentials, projectId);
-            if (current.title !== expectedTitle)
+            const current = await this.projects.get(
+                credentials,
+                request.projectId,
+            );
+            if (current.title !== request.expectedTitle)
                 throw publicError(
                     "CONFLICT",
                     "Project title changed; review before deleting",
                     false,
                     "review",
                 );
-            await this.projects.delete(credentials, projectId);
+            await this.projects.delete(credentials, request.projectId);
             return undefined;
         });
     }

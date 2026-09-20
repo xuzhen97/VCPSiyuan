@@ -52,6 +52,7 @@ export interface TaskDetailViewOptions {
     onAttachmentSelect?: (files: File[]) => void;
     onAttachmentRetry?: (itemId: string) => void;
     onAttachmentDownload?: (itemId: string) => void;
+    onAttachmentPreview?: (itemId: string) => void;
     onAttachmentDelete?: (itemId: string) => void;
     canUploadAttachments?: boolean;
     canDeleteAttachments?: boolean;
@@ -275,6 +276,7 @@ export class TaskDetailView {
                     i18n: i18n.attachmentList,
                     onRetry: (id) => this.options.onAttachmentRetry?.(id),
                     onDownload: (id) => this.options.onAttachmentDownload?.(id),
+                    onPreview: (id) => this.options.onAttachmentPreview?.(id),
                     onDelete: (id) => this.options.onAttachmentDelete?.(id),
                     canDelete:
                         this.options.canDeleteAttachments !== false &&

@@ -5,6 +5,7 @@ import { LabelGateway } from "../../src/kernel/vikunja/LabelGateway.js";
 import { UserGateway } from "../../src/kernel/vikunja/UserGateway.js";
 import { AttachmentGateway } from "../../src/kernel/vikunja/AttachmentGateway.js";
 import { VikunjaCredentials } from "../../src/shared/contracts.js";
+import { AttachmentPreviewSize } from "../../src/shared/attachment.js";
 
 class FakeClient {
     requests: Array<{
@@ -76,7 +77,7 @@ class FakeClient {
         _credentials: VikunjaCredentials,
         taskId: number,
         attachmentId: number,
-        previewSize?: number,
+        previewSize?: AttachmentPreviewSize,
     ) {
         this.requests.push({
             method: "GET",

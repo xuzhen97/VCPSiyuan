@@ -227,6 +227,44 @@ describe("VikunjaDock", () => {
         ).toBeNull();
     });
 
+    it("opens projects and labels as two separate pages", async () => {
+        const call = vi.fn().mockResolvedValue({
+            ok: true,
+            data: { items: [], total: 0, page: 1, perPage: 50 },
+        });
+        const onManageProjects = vi.fn();
+        const onManageLabels = vi.fn();
+        const dock = new VikunjaDock({
+            store: storeWith(call),
+            openSettings: vi.fn(),
+            i18n: dockI18n,
+            onManageProjects,
+            onManageLabels,
+        });
+        const element = document.createElement("div");
+        dock.mount(element);
+
+        const find = (action: string) =>
+            element.querySelector<HTMLButtonElement>(
+                `button[data-action='${action}']`,
+            );
+        expect(find("manage-projects")?.textContent).toBe(
+            dockI18n.manageProjects,
+        );
+        expect(find("manage-labels")?.textContent).toBe(dockI18n.manageLabels);
+
+        // Both entries are write-gated, so they only accept clicks once the
+        // first load settles. The dock rebuilds its DOM on every store change,
+        // so the buttons must be re-queried rather than captured up front.
+        await vi.waitFor(() => {
+            expect(find("manage-projects")?.disabled).toBe(false);
+        });
+        find("manage-projects")?.click();
+        find("manage-labels")?.click();
+        expect(onManageProjects).toHaveBeenCalledTimes(1);
+        expect(onManageLabels).toHaveBeenCalledTimes(1);
+    });
+
     it("stops updating the DOM after destroy", async () => {
         const call = vi.fn().mockResolvedValue({
             ok: true,

@@ -25,7 +25,8 @@ export interface VikunjaDockI18n extends TaskRowI18n {
     inbox: string;
     planned: string;
     newTask: string;
-    manageResources: string;
+    manageProjects: string;
+    manageLabels: string;
     loadMore: string;
     connectionOnline: string;
     connectionOffline: string;
@@ -46,8 +47,10 @@ export interface VikunjaDockOptions {
     onOpenTask?: (taskId: number) => void;
     /** Starts task creation; without it the create button is hidden. */
     onCreateTask?: () => void;
-    /** Opens project and label management. */
-    onManageResources?: () => void;
+    /** Opens project management. */
+    onManageProjects?: () => void;
+    /** Opens label management; the two are separate pages on purpose. */
+    onManageLabels?: () => void;
     onCurrentDocumentFilterChange?: (enabled: boolean) => void | Promise<void>;
     onAssignedToMeFilterChange?: (enabled: boolean) => void | Promise<void>;
     now?: () => Date;
@@ -60,7 +63,8 @@ export class VikunjaDock {
     private readonly openSettingsCb: () => void;
     private readonly onOpenTask?: (taskId: number) => void;
     private readonly onCreateTask?: () => void;
-    private readonly onManageResources?: () => void;
+    private readonly onManageProjects?: () => void;
+    private readonly onManageLabels?: () => void;
     private readonly onCurrentDocumentFilterChange?: (
         enabled: boolean,
     ) => void | Promise<void>;
@@ -79,7 +83,8 @@ export class VikunjaDock {
         this.openSettingsCb = options.openSettings;
         this.onOpenTask = options.onOpenTask;
         this.onCreateTask = options.onCreateTask;
-        this.onManageResources = options.onManageResources;
+        this.onManageProjects = options.onManageProjects;
+        this.onManageLabels = options.onManageLabels;
         this.onCurrentDocumentFilterChange =
             options.onCurrentDocumentFilterChange;
         this.onAssignedToMeFilterChange = options.onAssignedToMeFilterChange;
@@ -207,14 +212,24 @@ export class VikunjaDock {
             create.addEventListener("click", () => this.onCreateTask?.());
             filters.append(create);
         }
-        if (this.onManageResources) {
+        if (this.onManageProjects) {
             const manage = document.createElement("button");
             manage.type = "button";
             manage.className = "b3-button b3-button--text";
-            manage.dataset.action = "manage-resources";
-            manage.textContent = this.i18n.manageResources;
+            manage.dataset.action = "manage-projects";
+            manage.textContent = this.i18n.manageProjects;
             manage.disabled = this.isWriteDisabled();
-            manage.addEventListener("click", () => this.onManageResources?.());
+            manage.addEventListener("click", () => this.onManageProjects?.());
+            filters.append(manage);
+        }
+        if (this.onManageLabels) {
+            const manage = document.createElement("button");
+            manage.type = "button";
+            manage.className = "b3-button b3-button--text";
+            manage.dataset.action = "manage-labels";
+            manage.textContent = this.i18n.manageLabels;
+            manage.disabled = this.isWriteDisabled();
+            manage.addEventListener("click", () => this.onManageLabels?.());
             filters.append(manage);
         }
         root.append(filters);

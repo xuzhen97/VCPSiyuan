@@ -6,7 +6,11 @@ import {
 } from "../../shared/label.js";
 import { Page } from "../../shared/pagination.js";
 import { RpcResult, VikunjaCredentials } from "../../shared/contracts.js";
-import { DeleteLabelRequest, PatchLabelRequest } from "../../shared/rpc.js";
+import {
+    CreateLabelRequest,
+    DeleteLabelRequest,
+    PatchLabelRequest,
+} from "../../shared/rpc.js";
 import { publicError } from "../../shared/errors.js";
 import { LabelGateway } from "../vikunja/LabelGateway.js";
 import { toServiceError } from "./serviceError.js";
@@ -73,13 +77,18 @@ export class LabelService {
         );
     }
 
+    /**
+     * The RPC envelope carries the draft under `request.draft`; unwrapping it here
+     * keeps the wire contract in one place. Destructuring the request as the draft
+     * itself silently sent an empty body to Vikunja.
+     */
     async create(
         credentials: VikunjaCredentials,
-        draft: LabelDraft,
+        request: CreateLabelRequest,
     ): Promise<RpcResult<Label>> {
         return this.writeRun(
             credentials,
-            () => this.requireGateway().create!(credentials, draft),
+            () => this.requireGateway().create!(credentials, request.draft),
             "Label creation failed",
         );
     }

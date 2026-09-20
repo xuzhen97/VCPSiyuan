@@ -1,7 +1,9 @@
+import { isImageMimeType } from "../../shared/attachment.js";
 import { AttachmentItem } from "../stores/AttachmentStore.js";
 
 export interface AttachmentListI18n {
     retry: string;
+    preview: string;
     download: string;
     delete: string;
     statusLabel: (state: AttachmentItem["state"]) => string;
@@ -13,6 +15,8 @@ export interface AttachmentListOptions {
     onRetry: (itemId: string) => void;
     onDownload: (itemId: string) => void;
     onDelete: (itemId: string) => void;
+    /** Omitted by hosts that have no viewer, which hides the action entirely. */
+    onPreview?: (itemId: string) => void;
     canDelete?: boolean;
     canDownload?: boolean;
 }
@@ -71,6 +75,16 @@ export class AttachmentList {
                 );
                 row.append(retry);
             }
+            if (this.canPreview(item)) {
+                const preview = document.createElement("button");
+                preview.type = "button";
+                preview.dataset.action = "preview";
+                preview.textContent = i18n.preview;
+                preview.addEventListener("click", () =>
+                    this.options.onPreview?.(item.id),
+                );
+                row.append(preview);
+            }
             if (item.state === "succeeded") {
                 const download = document.createElement("button");
                 download.type = "button";
@@ -94,5 +108,15 @@ export class AttachmentList {
             list.append(row);
         }
         this.container.append(list);
+    }
+
+    /**
+     * Draft images are still in memory, so they preview without a round trip;
+     * uploaded ones need the store to fetch them.
+     */
+    private canPreview(item: AttachmentItem): boolean {
+        if (!this.options.onPreview) return false;
+        if (!isImageMimeType(item.mimeType)) return false;
+        return item.state === "succeeded" || item.file !== undefined;
     }
 }

@@ -60,4 +60,88 @@ describe("AttachmentList", () => {
         expect(host.textContent).not.toContain("uploading");
         expect(host.querySelector("button[data-action='download']")).toBeNull();
     });
+
+    it("offers an image preview for local drafts and uploaded images", () => {
+        const onPreview = vi.fn();
+        const host = document.createElement("div");
+        new AttachmentList({
+            items: [
+                {
+                    id: "file-3",
+                    file: new File(["x"], "draft.png"),
+                    fileName: "draft.png",
+                    mimeType: "image/png",
+                    size: 1,
+                    state: "queued",
+                },
+                {
+                    id: "remote-4",
+                    fileName: "saved.jpg",
+                    mimeType: "image/jpeg",
+                    size: 1,
+                    state: "succeeded",
+                },
+            ],
+            i18n: attachmentListI18n,
+            onRetry: vi.fn(),
+            onDownload: vi.fn(),
+            onDelete: vi.fn(),
+            onPreview,
+        }).mount(host);
+        const buttons = host.querySelectorAll("button[data-action='preview']");
+        expect(buttons).toHaveLength(2);
+        buttons[0].dispatchEvent(new MouseEvent("click"));
+        expect(onPreview).toHaveBeenCalledWith("file-3");
+        expect(buttons[0].textContent).toBe(attachmentListI18n.preview);
+    });
+
+    it("hides the preview action for non-images and for hosts without a viewer", () => {
+        const items: AttachmentItem[] = [
+            {
+                id: "remote-5",
+                fileName: "notes.txt",
+                mimeType: "text/plain",
+                size: 1,
+                state: "succeeded",
+            },
+            {
+                id: "file-6",
+                fileName: "gone.png",
+                mimeType: "image/png",
+                size: 1,
+                state: "failed",
+                error: { code: "REMOTE_ERROR", message: "x", retryable: false },
+            },
+        ];
+        const host = document.createElement("div");
+        new AttachmentList({
+            items,
+            i18n: attachmentListI18n,
+            onRetry: vi.fn(),
+            onDownload: vi.fn(),
+            onDelete: vi.fn(),
+            onPreview: vi.fn(),
+        }).mount(host);
+        expect(host.querySelector("button[data-action='preview']")).toBeNull();
+
+        const withoutHost = document.createElement("div");
+        new AttachmentList({
+            items: [
+                {
+                    id: "remote-7",
+                    fileName: "photo.png",
+                    mimeType: "image/png",
+                    size: 1,
+                    state: "succeeded",
+                },
+            ],
+            i18n: attachmentListI18n,
+            onRetry: vi.fn(),
+            onDownload: vi.fn(),
+            onDelete: vi.fn(),
+        }).mount(withoutHost);
+        expect(
+            withoutHost.querySelector("button[data-action='preview']"),
+        ).toBeNull();
+    });
 });

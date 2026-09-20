@@ -43,7 +43,14 @@ export function mapLabel(value: unknown): Label {
         descriptionMarkdown:
             typeof raw.description === "string" ? raw.description : "",
         color: color === null || color.trim() === "" ? null : color,
-        maxPermission: decodePermission(raw.max_permission),
+        // Vikunja only reports `max_permission` when a single label is read; the
+        // list endpoint omits it. Labels are user-scoped and the server enforces
+        // writes, so an unreported permission must not disable every row (which
+        // made the whole label page read-only).
+        maxPermission:
+            raw.max_permission === undefined || raw.max_permission === null
+                ? "write"
+                : decodePermission(raw.max_permission),
         usageCount:
             typeof raw.usage_count === "number" ? raw.usage_count : undefined,
     };

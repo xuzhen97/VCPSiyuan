@@ -16,6 +16,7 @@ import { createSettings, SettingsDescriptor } from "./settings.js";
 import { VikunjaController } from "./controller/VikunjaController.js";
 import { AuthenticatedRpcEnvelope } from "./controller/VikunjaController.js";
 import { toBytes } from "../shared/bytes.js";
+import { ATTACHMENT_PREVIEW_SIZE } from "../shared/attachment.js";
 import { RpcResponse, VikunjaRpcMethod } from "../shared/rpc.js";
 import { ConnectionInfo, RpcResult } from "../shared/contracts.js";
 import { registerBlockMenu } from "./context/blockMenu.js";
@@ -164,7 +165,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 void this.openLinkedTask(taskId);
             },
             onCreateTask: () => this.openCreateTaskDialog(),
-            onManageResources: () => void this.openManagementDialog(),
+            onManageProjects: () => void this.openProjectManager(),
+            onManageLabels: () => void this.openLabelManager(),
             onCurrentDocumentFilterChange: (enabled) =>
                 this.handleCurrentDocumentFilter(enabled),
             onAssignedToMeFilterChange: (enabled) =>
@@ -183,7 +185,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 offline: this.i18n.offline,
                 loadError: this.i18n.loadError,
                 newTask: this.i18n.newTask,
-                manageResources: this.i18n.manageResources,
+                manageProjects: this.i18n.manageProjects,
+                manageLabels: this.i18n.manageLabels,
                 loadMore: this.i18n.loadMore,
                 refreshing: this.i18n.refreshing,
                 connectionOnline: this.i18n.connectionOnline,
@@ -658,6 +661,12 @@ export class VCPSiyuanPlugin extends Plugin {
                     );
                 else attachmentStore.remove(itemId);
             },
+            onAttachmentPreview: (itemId) =>
+                void this.previewAttachment(
+                    attachmentStore,
+                    createdTaskId ?? 0,
+                    itemId,
+                ),
             onProjectChange: (projectId) =>
                 this.resourceStore?.searchMembers(projectId, ""),
             onAssigneeSearch: (projectId, query) =>
@@ -772,6 +781,12 @@ export class VCPSiyuanPlugin extends Plugin {
                 void this.linkedTaskAttachments?.retryFailed(taskId, itemId),
             onAttachmentDownload: (itemId) =>
                 void this.downloadAttachment(taskId, itemId),
+            onAttachmentPreview: (itemId) =>
+                void this.previewAttachment(
+                    this.linkedTaskAttachments,
+                    taskId,
+                    itemId,
+                ),
             onAttachmentDelete: (itemId) =>
                 void this.deleteAttachment(taskId, itemId),
             onBlockOpen: (blockId) =>
@@ -866,6 +881,69 @@ export class VCPSiyuanPlugin extends Plugin {
         URL.revokeObjectURL(url);
     }
 
+    /**
+     * Shows one attachment in an overlay. Draft files are still in memory, so
+     * they render from an object URL; uploaded ones are fetched as a downscaled
+     * preview, which keeps a phone-sized photo from arriving at full size.
+     */
+    private async previewAttachment(
+        store: AttachmentStore | undefined,
+        taskId: number,
+        itemId: string,
+    ): Promise<void> {
+        const item = store?.getItems().find((value) => value.id === itemId);
+        if (!store || !item) return;
+        let objectUrl: string;
+        if (item.file) {
+            objectUrl = URL.createObjectURL(item.file);
+        } else {
+            const download = await store.download(
+                taskId,
+                itemId,
+                ATTACHMENT_PREVIEW_SIZE,
+            );
+            if (!download) {
+                showMessage(this.i18n.previewFailed);
+                return;
+            }
+            objectUrl = URL.createObjectURL(
+                new Blob([new Uint8Array(toBytes(download.bytes))], {
+                    type: download.mimeType,
+                }),
+            );
+        }
+        this.showImagePreview(item.fileName, objectUrl);
+    }
+
+    private showImagePreview(fileName: string, objectUrl: string): void {
+        let dismiss = (): void => {};
+        const modal = createModalHost(
+            () => dismiss(),
+            "vcp-siyuan-modal--image-preview",
+        );
+        const panel = document.createElement("div");
+        panel.className = "vcp-siyuan-image-preview";
+        const image = document.createElement("img");
+        image.className = "vcp-siyuan-image-preview__image";
+        image.src = objectUrl;
+        image.alt = fileName;
+        const name = document.createElement("p");
+        name.className = "vcp-siyuan-image-preview__name";
+        name.textContent = fileName;
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "vcp-siyuan-image-preview__close b3-button";
+        close.textContent = this.i18n.close;
+        close.addEventListener("click", () => dismiss());
+        panel.append(name, image, close);
+        modal.host.append(panel);
+        close.focus();
+        dismiss = () => {
+            URL.revokeObjectURL(objectUrl);
+            modal.dispose();
+        };
+    }
+
     private async deleteAttachment(
         taskId: number,
         itemId: string,
@@ -896,23 +974,12 @@ export class VCPSiyuanPlugin extends Plugin {
         );
     }
 
-    private async openManagementDialog(): Promise<void> {
+    private async openProjectManager(): Promise<void> {
         if (!this.resourceStore) return;
         try {
             await this.resourceStore.refresh();
         } catch {
             showMessage(this.i18n.loadError);
-            return;
-        }
-        const project = this.resourceStore.getProjects()[0];
-        const impact = project
-            ? await this.controller.call("vikunja.projects.deleteImpact", {
-                  projectId: project.id,
-                  inboxProjectId: this.config.inboxProjectId,
-              })
-            : undefined;
-        if (impact && !impact.ok) {
-            showMessage(impact.error.message || this.i18n.loadError);
             return;
         }
         this.managementStore = new ManagementStore({
@@ -927,10 +994,10 @@ export class VCPSiyuanPlugin extends Plugin {
                           expectedTitle: expectedTitle ?? "",
                       }),
         });
-        if (impact?.ok) this.managementStore.setImpact(impact.data);
         const dialog = new ProjectManagerDialog({
             projects: this.resourceStore.getProjects(),
-            impact: impact?.ok ? impact.data : undefined,
+            // The delete-impact summary is fetched on demand: preloading it for
+            // the first project rendered a confirmation nobody asked for.
             i18n: {
                 title: this.i18n.projectManagerTitle,
                 impact: (open, completed, descendants) =>
@@ -938,20 +1005,23 @@ export class VCPSiyuanPlugin extends Plugin {
                         .replace("{open}", String(open))
                         .replace("{completed}", String(completed))
                         .replace("{descendants}", String(descendants)),
+                impactIncomplete: this.i18n.impactIncomplete,
                 confirmLabel: this.i18n.confirmProjectTitle,
                 delete: this.i18n.delete,
                 cancel: this.i18n.cancel,
+                close: this.i18n.close,
                 save: this.i18n.save,
                 search: this.i18n.projectSearchPlaceholder,
                 create: this.i18n.projectCreate,
                 edit: this.i18n.projectEdit,
+                empty: this.i18n.projectEmpty,
+                noMatches: this.i18n.noMatches,
                 titleLabel: this.i18n.projectTitleLabel,
                 descriptionLabel: this.i18n.projectDescriptionLabel,
                 colorLabel: this.i18n.projectColorLabel,
                 parentLabel: this.i18n.projectParentLabel,
                 archivedLabel: this.i18n.projectArchivedLabel,
                 projectPath: (path) => path,
-                manageLabels: this.i18n.manageLabels,
             },
             onCreate: async (draft) => {
                 await this.resourceStore?.createProject(draft);
@@ -999,10 +1069,9 @@ export class VCPSiyuanPlugin extends Plugin {
                     this.dockInstance.invalidate();
                 }
             },
-            onOpenLabels: () => {
+            onClose: () => {
                 dialog.destroy();
                 this.managementModal?.dispose();
-                void this.openLabelManagementDialog();
             },
         });
         const modal = createModalHost(() => {
@@ -1014,22 +1083,12 @@ export class VCPSiyuanPlugin extends Plugin {
         dialog.mount(modal.host);
     }
 
-    private async openLabelManagementDialog(): Promise<void> {
+    private async openLabelManager(): Promise<void> {
         if (!this.resourceStore) return;
         try {
             await this.resourceStore.refresh();
         } catch {
             showMessage(this.i18n.loadError);
-            return;
-        }
-        const label = this.resourceStore.getLabels()[0];
-        const impact = label
-            ? await this.controller.call("vikunja.labels.deleteImpact", {
-                  labelId: label.id,
-              })
-            : undefined;
-        if (impact && !impact.ok) {
-            showMessage(impact.error.message || this.i18n.loadError);
             return;
         }
         this.managementStore = new ManagementStore({
@@ -1044,21 +1103,23 @@ export class VCPSiyuanPlugin extends Plugin {
                           expectedTitle: expectedTitle ?? "",
                       }),
         });
-        if (impact?.ok) this.managementStore.setLabelImpact(impact.data);
         const dialog = new LabelManagerDialog({
             labels: this.resourceStore.getLabels(),
-            impact: impact?.ok ? impact.data : undefined,
             i18n: {
                 title: this.i18n.labelManagerTitle,
                 usage: (count) =>
                     this.i18n.labelUsage.replace("{count}", String(count)),
+                impactIncomplete: this.i18n.impactIncomplete,
                 confirmPlaceholder: this.i18n.confirmTitle,
                 delete: this.i18n.delete,
                 cancel: this.i18n.cancel,
+                close: this.i18n.close,
                 save: this.i18n.save,
-                search: this.i18n.projectSearchPlaceholder,
+                search: this.i18n.labelSearchPlaceholder,
                 create: this.i18n.labelCreate,
                 edit: this.i18n.labelEdit,
+                empty: this.i18n.labelEmpty,
+                noMatches: this.i18n.noMatches,
                 titleLabel: this.i18n.labelTitleLabel,
                 descriptionLabel: this.i18n.labelDescriptionLabel,
                 colorLabel: this.i18n.labelColorLabel,
@@ -1104,6 +1165,10 @@ export class VCPSiyuanPlugin extends Plugin {
                     await this.resourceStore?.refresh();
                     this.dockInstance.invalidate();
                 }
+            },
+            onClose: () => {
+                dialog.destroy();
+                this.managementModal?.dispose();
             },
         });
         const modal = createModalHost(() => {
@@ -1161,6 +1226,8 @@ export class VCPSiyuanPlugin extends Plugin {
                     detail.id,
                     itemId,
                 ),
+            onAttachmentPreview: (itemId) =>
+                void this.previewAttachment(attachmentStore, detail.id, itemId),
             onAttachmentDelete: (itemId) =>
                 void attachmentStore.deleteRemote(detail.id, itemId),
             confirmAttachmentDelete: () =>
@@ -1287,6 +1354,7 @@ export class VCPSiyuanPlugin extends Plugin {
                 this.i18n.preservedRepeatSummary.replace("{value}", summary),
             attachmentList: {
                 retry: this.i18n.retry,
+                preview: this.i18n.attachmentPreview,
                 download: this.i18n.attachmentDownload,
                 delete: this.i18n.delete,
                 statusLabel: (state) =>
@@ -1351,6 +1419,7 @@ export class VCPSiyuanPlugin extends Plugin {
             noAttachments: this.i18n.noAttachments,
             attachmentList: {
                 retry: this.i18n.retry,
+                preview: this.i18n.attachmentPreview,
                 download: this.i18n.attachmentDownload,
                 delete: this.i18n.delete,
                 statusLabel: (state) =>

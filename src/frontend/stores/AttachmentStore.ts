@@ -1,5 +1,6 @@
 import {
     AttachmentMeta,
+    AttachmentPreviewSize,
     BinaryDownload,
     UploadFailure,
     UploadFilePayload,
@@ -8,6 +9,7 @@ import { PublicError, publicError } from "../../shared/errors.js";
 import { RpcResult } from "../../shared/contracts.js";
 import { RpcRequest, RpcResponse, VikunjaRpcMethod } from "../../shared/rpc.js";
 import { PendingOperationStore } from "../persistence/PendingOperationStore.js";
+import { encodeBase64 } from "../../shared/bytes.js";
 
 export type AttachmentItemState =
     | "queued"
@@ -198,6 +200,7 @@ export class AttachmentStore {
     async download(
         taskId: number,
         itemId: string,
+        previewSize?: AttachmentPreviewSize,
     ): Promise<BinaryDownload | null> {
         if (!this.enabled) return null;
         const item = this.items.get(itemId);
@@ -208,6 +211,7 @@ export class AttachmentStore {
             {
                 taskId,
                 attachmentId,
+                previewSize,
             },
         );
         return result.ok ? result.data : null;
@@ -282,7 +286,7 @@ export class AttachmentStore {
                         id: item.id,
                         name: item.fileName,
                         type: item.mimeType,
-                        bytes: new Uint8Array(buffer),
+                        bytes: encodeBase64(new Uint8Array(buffer)),
                     },
                 });
             } catch {

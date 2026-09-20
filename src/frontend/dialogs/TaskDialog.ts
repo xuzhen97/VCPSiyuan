@@ -75,6 +75,7 @@ export interface TaskDialogOptions {
     attachmentLimitBytes?: number;
     onAttachmentRetry?: (itemId: string) => void;
     onAttachmentDownload?: (itemId: string) => void;
+    onAttachmentPreview?: (itemId: string) => void;
     onAttachmentDelete?: (itemId: string) => void;
     confirmAttachmentDelete?: (itemId: string) => boolean | Promise<boolean>;
     canUploadAttachments?: boolean;
@@ -607,6 +608,7 @@ export class TaskDialog {
                 i18n: i18n.attachmentList,
                 onRetry: (id) => this.options.onAttachmentRetry?.(id),
                 onDownload: (id) => this.options.onAttachmentDownload?.(id),
+                onPreview: (id) => this.options.onAttachmentPreview?.(id),
                 onDelete: (id) => {
                     void Promise.resolve(
                         this.options.confirmAttachmentDelete?.(id) ?? true,

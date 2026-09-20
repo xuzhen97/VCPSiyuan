@@ -92,6 +92,26 @@ describe("project mapping", () => {
         expect(label.color).toBeNull();
         expect(label.maxPermission).toBe("admin");
     });
+
+    it("treats an unreported label permission as writable", () => {
+        // `GET /labels` omits max_permission, unlike the single-label read.
+        const listed = mapLabel({
+            id: 3,
+            title: "from list",
+            description: "",
+            hex_color: "ff0000",
+        });
+        expect(listed.maxPermission).toBe("write");
+
+        const readOnly = mapLabel({
+            id: 4,
+            title: "from read",
+            description: "",
+            hex_color: "ff0000",
+            max_permission: 0,
+        });
+        expect(readOnly.maxPermission).toBe("read");
+    });
 });
 
 describe("attachment mapping", () => {

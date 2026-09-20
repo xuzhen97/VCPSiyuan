@@ -58,4 +58,71 @@ describe("resource impact services", () => {
         const result = await service.getDeleteImpact(credentials, 7);
         expect(result.complete).toBe(false);
     });
+
+    // The RPC binding passes one `request` object, so a service that destructured
+    // its arguments positionally received `{ draft }` as the draft itself and sent
+    // an empty body: Vikunja then stored a title-less row.
+    it("unwraps the RPC envelope for label and project writes", async () => {
+        const labelGateway = {
+            create: vi.fn().mockResolvedValue({
+                id: 1,
+                title: "Label",
+                descriptionMarkdown: "",
+                color: null,
+                maxPermission: "owner",
+            }),
+        };
+        const labels = new LabelService(labelGateway as never);
+        await labels.create(credentials, {
+            draft: {
+                title: "Label",
+                descriptionMarkdown: "body",
+                color: "00ff00",
+            },
+        });
+        expect(labelGateway.create).toHaveBeenCalledWith(credentials, {
+            title: "Label",
+            descriptionMarkdown: "body",
+            color: "00ff00",
+        });
+
+        const projectGateway = {
+            create: vi.fn().mockResolvedValue({ id: 2, title: "Project" }),
+            patch: vi.fn().mockResolvedValue({ id: 2, title: "Renamed" }),
+            get: vi.fn().mockResolvedValue({ id: 2, title: "Renamed" }),
+            delete: vi.fn().mockResolvedValue(undefined),
+        };
+        const projects = new ProjectService(
+            projectGateway as never,
+            {} as never,
+        );
+        await projects.create(credentials, {
+            draft: {
+                title: "Project",
+                descriptionMarkdown: "",
+                color: null,
+                parentProjectId: null,
+            },
+        });
+        expect(projectGateway.create).toHaveBeenCalledWith(credentials, {
+            title: "Project",
+            descriptionMarkdown: "",
+            color: null,
+            parentProjectId: null,
+        });
+
+        await projects.patch(credentials, {
+            projectId: 2,
+            draft: { title: "Renamed" },
+        });
+        expect(projectGateway.patch).toHaveBeenCalledWith(credentials, 2, {
+            title: "Renamed",
+        });
+
+        await projects.delete(credentials, {
+            projectId: 2,
+            expectedTitle: "Renamed",
+        });
+        expect(projectGateway.delete).toHaveBeenCalledWith(credentials, 2);
+    });
 });

@@ -54,7 +54,8 @@ export const dockI18n: VikunjaDockI18n = {
  inbox: t("inbox"),
  planned: t("planned"),
  newTask: t("newTask"),
- manageResources: t("manageResources"),
+ manageProjects: t("manageProjects"),
+ manageLabels: t("manageLabels"),
  loadMore: t("loadMore"),
  refreshing: t("refreshing"),
  connectionOnline: t("connectionOnline"),
@@ -123,6 +124,7 @@ export const taskDialogI18n: TaskDialogI18n = {
  noAttachments: t("noAttachments"),
  attachmentList: {
   retry: t("retry"),
+  preview: t("attachmentPreview"),
   download: t("attachmentDownload"),
   delete: t("delete"),
   statusLabel: (state) => {
@@ -169,6 +171,7 @@ export const taskDetailViewI18n: TaskDetailViewI18n = {
   fill(t("preservedRepeatSummary"), { value: summary }),
  attachmentList: {
   retry: t("retry"),
+  preview: t("attachmentPreview"),
   download: t("attachmentDownload"),
   delete: t("delete"),
   statusLabel: (state) => {
@@ -187,6 +190,7 @@ export const taskDetailViewI18n: TaskDetailViewI18n = {
 
 export const attachmentListI18n: AttachmentListI18n = {
  retry: t("retry"),
+ preview: t("attachmentPreview"),
  download: t("attachmentDownload"),
  delete: t("delete"),
  statusLabel: (state) => {
@@ -201,32 +205,39 @@ export const projectManagerDialogI18n: ProjectManagerDialogI18n = {
  title: t("projectManagerTitle"),
  impact: (open, completed, descendants) =>
   fill(t("projectImpact"), { open, completed, descendants }),
+ impactIncomplete: t("impactIncomplete"),
  confirmLabel: t("confirmProjectTitle"),
  delete: t("delete"),
  cancel: t("cancel"),
+ close: t("close"),
  save: t("save"),
  search: t("projectSearchPlaceholder"),
  create: t("projectCreate"),
  edit: t("projectEdit"),
+ empty: t("projectEmpty"),
+ noMatches: t("noMatches"),
  titleLabel: t("projectTitleLabel"),
  descriptionLabel: t("projectDescriptionLabel"),
  colorLabel: t("projectColorLabel"),
  parentLabel: t("projectParentLabel"),
  archivedLabel: t("projectArchivedLabel"),
  projectPath: (path) => path,
- manageLabels: t("manageLabels"),
 };
 
 export const labelManagerDialogI18n: LabelManagerDialogI18n = {
  title: t("labelManagerTitle"),
  usage: (count) => fill(t("labelUsage"), { count }),
+ impactIncomplete: t("impactIncomplete"),
  confirmPlaceholder: t("confirmTitle"),
  delete: t("delete"),
  cancel: t("cancel"),
+ close: t("close"),
  save: t("save"),
- search: t("projectSearchPlaceholder"),
+ search: t("labelSearchPlaceholder"),
  create: t("labelCreate"),
  edit: t("labelEdit"),
+ empty: t("labelEmpty"),
+ noMatches: t("noMatches"),
  titleLabel: t("labelTitleLabel"),
  descriptionLabel: t("labelDescriptionLabel"),
  colorLabel: t("labelColorLabel"),

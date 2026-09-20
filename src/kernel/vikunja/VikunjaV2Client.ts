@@ -1,5 +1,6 @@
 import {
     AttachmentMeta,
+    AttachmentPreviewSize,
     UploadBatchResult,
     UploadFilePayload,
 } from "../../shared/attachment.js";
@@ -151,7 +152,7 @@ export class VikunjaV2Client {
         credentials: VikunjaCredentials,
         taskId: number,
         attachmentId: number,
-        previewSize?: number,
+        previewSize?: AttachmentPreviewSize,
     ): Promise<HttpResponse<Uint8Array>> {
         this.assertId(taskId, "taskId");
         this.assertId(attachmentId, "attachmentId");
