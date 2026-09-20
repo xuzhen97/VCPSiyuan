@@ -366,13 +366,16 @@ GET /api/v2/user   # 验证 Token 确实可用
 
 ## 7. 开发修改后的验证
 
-`pnpm dev:real:web` 会监听并同步：
+`pnpm dev:real:web` 与 `pnpm dev:all` 会监听并同步：
 
 ```text
 index.js
 index.css
 kernel.js
+i18n/*.json
 ```
+
+i18n 仅在启动阶段自动同步会让开发期间修改的文案在插件里渲染为空字符串（键不存在），所以它与构建产物一同监听；若你启动的是修复前的实例，重启一次 `pnpm dev:all` 即可生效。
 
 修改代码后的最短流程：
 

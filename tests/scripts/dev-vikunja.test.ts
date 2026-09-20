@@ -352,6 +352,8 @@ describe("dev-vikunja launcher", () => {
         await expect(fs.stat(result.paths.logPath)).resolves.toBeTruthy();
         expect(shutdownSpy).toHaveBeenCalledTimes(1);
         expect(handedOff).toBe(result.shutdown);
+        expect(webChild!.stdout.listenerCount("data")).toBeGreaterThan(0);
+        expect(webChild!.stderr.listenerCount("data")).toBeGreaterThan(0);
         await result.shutdown();
     });
 

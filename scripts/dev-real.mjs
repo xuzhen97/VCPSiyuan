@@ -662,11 +662,19 @@ function watchBuildArtifacts(paths, onChange) {
         ["kernel.js", paths.kernelOutput],
     ]);
     const watcher = fsNative.watch(paths.repoRoot, { persistent: false }, (eventType, filename) => {
-        const name = filename?.toString();
-        if ((eventType !== "change" && eventType !== "rename") || !BUILD_ARTIFACTS.has(name)) {
-            return;
-        }
-        const source = sources.get(name);
+        if (eventType !== "change" && eventType !== "rename") return;
+        // fs.watch reports separators differently per platform.
+        const relative = filename?.toString().replace(/\\/g, "/");
+        if (!relative) return;
+        // i18n only reached the plugin directory on startup, so a label edited
+        // during a dev session kept rendering as an empty string.
+        const name =
+            BUILD_ARTIFACTS.has(relative) ||
+            (relative.startsWith("i18n/") && relative.endsWith(".json"))
+                ? relative
+                : undefined;
+        if (!name) return;
+        const source = sources.get(name) ?? path.join(paths.repoRoot, name);
         clearTimeout(timers.get(name));
         timers.set(name, setTimeout(() => {
             void onChange(name, source).catch((error) => {

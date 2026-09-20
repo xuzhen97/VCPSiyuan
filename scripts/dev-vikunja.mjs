@@ -472,7 +472,10 @@ export async function runVikunja({
         const webChild = owned.add("web", spawnFnImpl(paths.serverPath, ["web"], {
             env: { ...process.env, ...environment },
             cwd: paths.serverDir,
+            stdio: ["ignore", "pipe", "pipe"],
         }));
+        webChild.stdout?.on("data", (chunk) => logStream.write(chunk));
+        webChild.stderr?.on("data", (chunk) => logStream.write(chunk));
         await waitForVikunja(origin, { fetchImpl, timeoutMs, delayMs, signal: controller.signal });
         const auth = await loginToVikunja({
             origin,
