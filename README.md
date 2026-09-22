@@ -1,6 +1,6 @@
 # VCPSiyuan (VCP for SiYuan)
 
-VCPSiyuan connects SiYuan Note with **Vikunja v2.5.0 API v2**. It provides a native RightTop task workbench for Focus, Inbox, and Planned views, task details and editing, completion, and SiYuan Block links.
+VCPSiyuan connects SiYuan Note with **Vikunja v2.5.0 API v2**. It provides a native RightTop task workbench with the Inbox, All Tasks, and Projects & Labels tabs, task details, create/edit/complete/delete, and SiYuan Block links.
 
 ## Supported boundary
 
@@ -16,7 +16,7 @@ VCPSiyuan connects SiYuan Note with **Vikunja v2.5.0 API v2**. It provides a nat
 3. Open **Settings -> Plugins -> VCP for SiYuan**.
 4. Enter the Vikunja instance Origin, without `/api/v1` or `/api/v2`, and select the concrete Inbox project if desired. Inbox does not recursively include child projects.
 5. Run **Test Connection**. The capability report shows the server version, attachment availability, server `max_file_size`, and the effective attachment limit.
-6. Open the Vikunja Dock to browse tasks across the Focus, Inbox, and Planned views, and to open a task's detail.
+6. Open the Vikunja Dock to browse tasks across the Inbox, All Tasks, and Projects & Labels tabs, apply server-side filters, and open a task's detail.
 
 ## Task and resource behavior
 
@@ -72,7 +72,7 @@ To verify the plugin end-to-end inside the **real SiYuan host** (loading, Dock, 
    - Settings → Secrets and Variables: add a secret named `VIKUNJA_API_TOKEN` with the `Token` from step 1. The printed login JWT is fine for local testing (~1 day); for long-lived access create an API Token in Vikunja instead.
    - Click "Test connection". The capability report confirms connectivity — this check also verifies the authenticated `/api/v2/user`, not just the public `/info`.
 
-4. Open the right-hand Vikunja Dock and verify task read/create/complete and Block linking across the Focus / Inbox / Planned views; after changes, run the validation commands in the Development section below.
+4. Open the right-hand Vikunja Dock and verify task read/filter/create/complete/delete and Block linking across the Inbox / All Tasks tabs; after changes, run the validation commands in the Development section below.
 
 5. To stop: press `Ctrl+C` in each terminal. Data is retained under `.tmp/vikunja-test/<run-id>/` and `.tmp/siyuan-real/`; remove it with `pnpm dev:vikunja:clean` and `pnpm dev:real:clean` once you no longer need it.
 

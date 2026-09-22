@@ -1,6 +1,6 @@
 # VCPSiyuan（VCP 思源助手）
 
-VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原生 `RightTop` 任务工作台，提供「收件箱、全部任务、项目标签」页签，以及任务详情、创建/编辑/完成和思源 Block 关联。
+VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原生 `RightTop` 任务工作台，提供「收件箱、全部任务、项目标签」页签，以及任务详情、创建/编辑/完成/删除和思源 Block 关联。
 
 ## 支持边界
 
@@ -72,7 +72,7 @@ VCPSiyuan 将思源笔记连接到 **Vikunja v2.5.0 API v2**。插件提供原�
    - 「设置 → 密钥和变量」：新增密钥 `VIKUNJA_API_TOKEN`，内容填入第 1 步的 `Token`。本地测试用打印的登录 JWT 即可（约 1 天有效）；长期接入请在 Vikunja 创建 API Token 再填入。
    - 点击「测试连接」，能力报告出现即表示连通——该检查同时校验了需鉴权的 `/api/v2/user`，而不只是公开 `/info`。
 
-4. 打开右侧 Vikunja Dock，在「收件箱 / 全部任务 / 项目标签」页签验证任务读取、筛选、创建、完成与 Block 关联；改动后按下方「开发与沙箱」的验证命令回归。
+4. 打开右侧 Vikunja Dock，在「收件箱 / 全部任务 / 项目标签」页签验证任务读取、筛选、创建、完成、删除与 Block 关联；改动后按下方「开发与沙箱」的验证命令回归。
 
 5. 结束测试：分别在两个终端按 `Ctrl+C` 停止。数据保留在 `.tmp/vikunja-test/<run-id>/` 与 `.tmp/siyuan-real/`，确认不再需要后分别用 `pnpm dev:vikunja:clean` 与 `pnpm dev:real:clean` 清理。
 
