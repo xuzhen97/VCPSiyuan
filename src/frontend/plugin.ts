@@ -1354,19 +1354,33 @@ export class VCPSiyuanPlugin extends Plugin {
         }
         try {
             await this.resourceStore.refresh();
-            const assignees = await this.resourceStore.searchMembers(
-                projectId,
-                "",
+        } catch (error) {
+            // Projects and labels are load-bearing: without them the picker
+            // cannot work, so this failure keeps blocking - but with the real
+            // cause, not the generic text.
+            showMessage(
+                error instanceof Error && error.message
+                    ? error.message
+                    : this.i18n.loadError,
             );
-            return {
-                projects: this.resourceStore.getProjects(),
-                labels: this.resourceStore.getLabels(),
-                assignees,
-            };
-        } catch {
-            showMessage(this.i18n.loadError);
             return undefined;
         }
+        let assignees: Awaited<
+            ReturnType<ResourceStore["searchMembers"]>
+        >;
+        try {
+            assignees = await this.resourceStore.searchMembers(projectId, "");
+        } catch {
+            // Assignee search needs elevated rights on some servers and is
+            // optional data; it must not block creating tasks (the dialog
+            // falls back to its assignee-unavailable hint).
+            assignees = [];
+        }
+        return {
+            projects: this.resourceStore.getProjects(),
+            labels: this.resourceStore.getLabels(),
+            assignees,
+        };
     }
 
     /**
