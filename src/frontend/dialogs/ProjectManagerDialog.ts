@@ -25,6 +25,7 @@ export interface ProjectManagerDialogI18n {
 export interface ProjectManagerDialogOptions {
     projects?: Project[];
     impact?: ProjectDeleteImpact;
+    embedded?: boolean;
     i18n: ProjectManagerDialogI18n;
     onCreate?: (draft: {
         title: string;
@@ -113,11 +114,15 @@ export class ProjectManagerDialog {
         heading.textContent = i18n.title;
         const close = document.createElement("button");
         close.type = "button";
-        close.dataset.action = "close";
-        close.className = "b3-button b3-button--text";
-        close.textContent = i18n.close;
-        close.addEventListener("click", () => this.options.onClose?.());
-        header.append(heading, close);
+        if (!this.options.embedded) {
+            close.dataset.action = "close";
+            close.className = "b3-button b3-button--text";
+            close.textContent = i18n.close;
+            close.addEventListener("click", () => this.options.onClose?.());
+            header.append(heading, close);
+        } else {
+            header.append(heading);
+        }
         return header;
     }
 

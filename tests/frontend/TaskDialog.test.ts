@@ -28,7 +28,7 @@ describe("TaskDialog", () => {
         expect(host.textContent).toContain(taskDialogI18n.titleRequired);
     });
 
-    it("locks the Block link and shows the existing link count for Block creates", () => {
+    it("offers Block linking as an opt-in choice for Block creates", () => {
         const store = TaskDialogStore.create({
             projectId: 2,
             linkedBlockId: "block-1",
@@ -54,12 +54,13 @@ describe("TaskDialog", () => {
             'input[name="blockLink"]',
         );
         expect(link).not.toBeNull();
-        expect(link!.checked).toBe(true);
-        // The Block entry point owns the link, so it cannot be silently dropped.
-        expect(link!.disabled).toBe(true);
-        expect(host.textContent).toContain(taskDialogI18n.blockLinkLocked);
-        expect(host.textContent).toContain(taskDialogI18n.blockLinkedCount(2));
+        expect(link!.checked).toBe(false);
+        expect(link!.disabled).toBe(false);
+        expect(store.getBlockLink().enabled).toBe(false);
+        link!.checked = true;
+        link!.dispatchEvent(new Event("change", { bubbles: true }));
         expect(store.getBlockLink().enabled).toBe(true);
+        expect(host.textContent).toContain(taskDialogI18n.blockLinkedCount(2));
     });
 
     it("omits the Block link control entirely for a plain create", () => {
@@ -136,37 +137,47 @@ describe("TaskDialog", () => {
         const host = document.createElement("div");
         dialog.mount(host);
 
-        expect(host.querySelector("select[name='projectId']")).not.toBeNull();
+        expect(
+            host.querySelector("[data-filter='project'][data-mode='single']"),
+        ).not.toBeNull();
         expect(host.querySelector("input[name='startAt']")).not.toBeNull();
         expect(host.querySelector("input[name='dueAt']")).not.toBeNull();
         expect(host.querySelector("input[name='priority']")).not.toBeNull();
-        expect(host.querySelector("select[name='labels']")).not.toBeNull();
-        expect(host.querySelector("select[name='assignees']")).not.toBeNull();
+        expect(host.querySelector("[data-filter='label']")).not.toBeNull();
+        expect(host.querySelector("[data-filter='assignee']")).not.toBeNull();
         expect(
-            host.querySelector("input[name='assigneeSearch']"),
+            host.querySelector(".vcp-siyuan-dock__multi-select-search"),
         ).not.toBeNull();
         expect(host.querySelector("button")).not.toBeNull();
         expect(host.querySelector("select[name='repeatUnit']")).not.toBeNull();
 
-        const project = host.querySelector<HTMLSelectElement>(
-            "select[name='projectId']",
+        const project = host.querySelector<HTMLButtonElement>(
+            "[data-filter='project'] button",
         )!;
-        project.value = "2";
+        project.click();
+        host.querySelector<HTMLInputElement>(
+            "[data-filter='project'] input[type='radio']",
+        )!.click();
         host.querySelector<HTMLInputElement>("input[name='priority']")!.value =
             "4";
         host.querySelector<HTMLInputElement>(
             "input[name='priority']",
         )!.dispatchEvent(new Event("input", { bubbles: true }));
-        const labels = host.querySelector<HTMLSelectElement>(
-            "select[name='labels']",
+        const labels = host.querySelector<HTMLButtonElement>(
+            "[data-filter='label'] button",
         )!;
-        labels.options[0].selected = true;
-        labels.dispatchEvent(new Event("change", { bubbles: true }));
-        const assignees = host.querySelector<HTMLSelectElement>(
-            "select[name='assignees']",
+        labels.click();
+        host.querySelector<HTMLInputElement>(
+            "[data-filter='label'] input[type='checkbox']",
+        )!.click();
+        expect(store.getLabelIds()).toEqual([3]);
+        const assignees = host.querySelector<HTMLButtonElement>(
+            "[data-filter='assignee'] button",
         )!;
-        assignees.options[0].selected = true;
-        assignees.dispatchEvent(new Event("change", { bubbles: true }));
+        assignees.click();
+        host.querySelector<HTMLInputElement>(
+            "[data-filter='assignee'] input[type='radio']",
+        )!.click();
         expect(store.getDraft()).toMatchObject({
             priority: 4,
             labelIds: [3],
@@ -174,7 +185,7 @@ describe("TaskDialog", () => {
         });
 
         const search = host.querySelector<HTMLInputElement>(
-            "input[name='assigneeSearch']",
+            ".vcp-siyuan-dock__multi-select-search",
         )!;
         search.value = "ali";
         search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -259,29 +270,26 @@ describe("TaskDialog", () => {
         });
         const host = document.createElement("div");
         dialog.mount(host);
-        const project = host.querySelector<HTMLSelectElement>(
-            "select[name='projectId']",
+        const project = host.querySelector<HTMLButtonElement>(
+            "[data-filter='project'] button",
         )!;
-        project.value = "2";
-        project.dispatchEvent(new Event("change", { bubbles: true }));
-        project.value = "3";
-        project.dispatchEvent(new Event("change", { bubbles: true }));
+        project.click();
+        const projectOptions = host.querySelectorAll<HTMLInputElement>(
+            "[data-filter='project'] input[type='radio']",
+        );
+        projectOptions[0].click();
+        project.click();
+        host.querySelectorAll<HTMLInputElement>(
+            "[data-filter='project'] input[type='radio']",
+        )[1].click();
 
         resolveOld([{ id: 2, username: "old", displayName: "Old" }]);
         await Promise.resolve();
-        expect(
-            [...host.querySelectorAll("select[name='assignees'] option")].map(
-                (option) => option.textContent,
-            ),
-        ).not.toContain("Old");
+        expect(host.textContent).not.toContain("Old");
 
         resolveNew([{ id: 3, username: "new", displayName: "New" }]);
         await Promise.resolve();
-        expect(
-            [...host.querySelectorAll("select[name='assignees'] option")].map(
-                (option) => option.textContent,
-            ),
-        ).toContain("New");
+        expect(host.textContent).toContain("New");
     });
 
     it("renders conflict recovery actions and invokes reload or review", async () => {
@@ -381,7 +389,7 @@ describe("TaskDialog", () => {
         const preview = host.querySelector<HTMLButtonElement>(
             "button[data-action='preview']",
         );
-        expect(preview?.textContent).toBe(
+        expect(preview?.getAttribute("aria-label")).toContain(
             taskDialogI18n.attachmentList.preview,
         );
         preview?.click();

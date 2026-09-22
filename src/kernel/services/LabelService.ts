@@ -19,12 +19,13 @@ interface LabelTaskQueryLike {
     query: (
         credentials: VikunjaCredentials,
         query: {
-            view: "focus" | "inbox" | "planned";
+            view: "inbox" | "all";
             page: number;
             perPage: number;
             timeZone: string;
-            filter?: string;
-            doneFilter?: "open" | "done" | "all";
+            doneFilter: "open" | "all";
+            projectIds: number[];
+            labelIds: number[];
         },
     ) => Promise<{ data: { total: number } }>;
 }
@@ -161,12 +162,13 @@ export class LabelService {
         try {
             const taskQuery = this.taskQuery ?? this.asTaskQuery();
             const result = await taskQuery.query(credentials, {
-                view: "focus",
+                view: "all",
                 page: 1,
                 perPage: 1,
                 timeZone: "UTC",
-                filter: `labels = ${labelId}`,
                 doneFilter: "all",
+                projectIds: [],
+                labelIds: [labelId],
             });
             const candidate = this.gateway as LabelGatewayLike;
             if (!candidate.get) {

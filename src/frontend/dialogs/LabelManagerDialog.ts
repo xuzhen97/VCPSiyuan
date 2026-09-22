@@ -22,6 +22,7 @@ export interface LabelManagerDialogI18n {
 export interface LabelManagerDialogOptions {
     labels?: Label[];
     impact?: LabelDeleteImpact;
+    embedded?: boolean;
     i18n: LabelManagerDialogI18n;
     onCreate?: (draft: {
         title: string;
@@ -104,11 +105,15 @@ export class LabelManagerDialog {
         heading.textContent = i18n.title;
         const close = document.createElement("button");
         close.type = "button";
-        close.dataset.action = "close";
-        close.className = "b3-button b3-button--text";
-        close.textContent = i18n.close;
-        close.addEventListener("click", () => this.options.onClose?.());
-        header.append(heading, close);
+        if (!this.options.embedded) {
+            close.dataset.action = "close";
+            close.className = "b3-button b3-button--text";
+            close.textContent = i18n.close;
+            close.addEventListener("click", () => this.options.onClose?.());
+            header.append(heading, close);
+        } else {
+            header.append(heading);
+        }
         return header;
     }
 

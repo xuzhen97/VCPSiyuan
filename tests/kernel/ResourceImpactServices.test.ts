@@ -29,6 +29,9 @@ describe("resource impact services", () => {
     });
 
     it("scopes label impact to accessible tasks and uses the remote title", async () => {
+        const taskQuery = {
+            query: vi.fn().mockResolvedValue({ data: { total: 3 } }),
+        };
         const service = new LabelService(
             {
                 get: vi
@@ -41,14 +44,21 @@ describe("resource impact services", () => {
                         maxPermission: "owner",
                     }),
             } as never,
-            {
-                query: vi.fn().mockResolvedValue({ data: { total: 3 } }),
-            } as never,
+            taskQuery as never,
         );
         const result = await service.getDeleteImpact(credentials, 7);
         expect(result.complete).toBe(true);
         expect(result.accessibleTaskCount).toBe(3);
         expect(result.label.title).toBe("Remote");
+        expect(taskQuery.query).toHaveBeenCalledWith(
+            credentials,
+            expect.objectContaining({
+                view: "all",
+                doneFilter: "all",
+                projectIds: [],
+                labelIds: [7],
+            }),
+        );
     });
 
     it("does not allow a label deletion preview without a remote label read", async () => {

@@ -26,7 +26,7 @@ describe("SummaryCache", () => {
                 stored = value;
             },
         });
-        await cache.save("https://tasks.example", "focus", {
+        await cache.save("https://tasks.example", "all", {
             page: 1,
             perPage: 50,
             items: [task],
@@ -37,7 +37,7 @@ describe("SummaryCache", () => {
         expect(raw).not.toContain("token");
         expect(raw).not.toContain("avatarUrl");
         expect(
-            await cache.load("https://tasks.example", "focus"),
+            await cache.load("https://tasks.example", "all"),
         ).toMatchObject({ items: [{ id: 1, title: "Read" }] });
     });
 
@@ -46,6 +46,6 @@ describe("SummaryCache", () => {
             load: async () => ({ schemaVersion: 99 }),
             save: async () => {},
         });
-        expect(await cache.load("https://tasks.example", "focus")).toBeNull();
+        expect(await cache.load("https://tasks.example", "all")).toBeNull();
     });
 });

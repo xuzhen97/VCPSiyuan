@@ -135,10 +135,9 @@ describe("VCPSiyuanPlugin Block Menu integration", () => {
         });
 
         await plugin.onunload();
-        expect(off).toHaveBeenCalledTimes(2);
+        expect(off).toHaveBeenCalledTimes(1);
         expect(off.mock.calls.map(([event]) => event)).toEqual([
             "click-blockicon",
-            "switch-protyle",
         ]);
         expect(
             document.querySelector(".vcp-siyuan-linked-task-dialog"),

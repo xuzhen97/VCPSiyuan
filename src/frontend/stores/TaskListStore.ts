@@ -1,18 +1,10 @@
 import { RpcResult } from "../../shared/contracts.js";
 import { Page } from "../../shared/pagination.js";
 import { RpcRequest, RpcResponse, VikunjaRpcMethod } from "../../shared/rpc.js";
-import {
-    FocusGroups,
-    PlannedGroups,
-    TaskDetail,
-    TaskQuery,
-    TaskSummary,
-    groupFocusTasks,
-    groupPlannedTasks,
-} from "../../shared/task.js";
+import { TaskQuery, TaskDetail, TaskSummary } from "../../shared/task.js";
 import { SummaryCache } from "../persistence/SummaryCache.js";
 
-export type TaskView = "focus" | "inbox" | "planned";
+export type TaskView = "inbox" | "all";
 export type TaskListStatus =
     | "idle"
     | "loading"
@@ -20,6 +12,12 @@ export type TaskListStatus =
     | "refreshing"
     | "offline"
     | "error";
+
+export interface TaskFilterState {
+    incompleteOnly: boolean;
+    projectIds: number[];
+    labelIds: number[];
+}
 
 export interface TaskListState {
     view: TaskView;
@@ -44,12 +42,15 @@ export interface TaskListStoreOptions {
     origin: string;
     timeZone: string;
     inboxProjectId?: number | null;
-    currentDocumentTaskIds?: Set<number>;
-    currentUserId?: number;
     summaryCache?: SummaryCache;
 }
 
-const VIEWS: TaskView[] = ["focus", "inbox", "planned"];
+const VIEWS: TaskView[] = ["inbox", "all"];
+const DEFAULT_FILTERS: TaskFilterState = {
+    incompleteOnly: true,
+    projectIds: [],
+    labelIds: [],
+};
 
 export class TaskListStore {
     private readonly controller: ControllerLike;
@@ -57,14 +58,11 @@ export class TaskListStore {
     private readonly timeZone: string;
     private inboxProjectId: number | null | undefined;
     private readonly summaryCache?: SummaryCache;
-    private currentDocumentTaskIds: Set<number>;
-    private currentDocumentFilter: boolean;
-    private currentUserId?: number;
     private readonly states = new Map<TaskView, TaskListState>();
+    private readonly filters = new Map<TaskView, TaskFilterState>();
     private readonly generations = new Map<TaskView, number>();
     private readonly listeners = new Set<() => void>();
-    private activeView: TaskView = "focus";
-    private assignedToMe = false;
+    private activeView: TaskView = "inbox";
     private readonly pendingDone = new Set<number>();
     private readonly doneQueues = new Map<number, Promise<void>>();
     private loadingMore = false;
@@ -76,11 +74,6 @@ export class TaskListStore {
         this.timeZone = options.timeZone;
         this.inboxProjectId = options.inboxProjectId;
         this.summaryCache = options.summaryCache;
-        this.currentDocumentTaskIds =
-            options.currentDocumentTaskIds ?? new Set();
-        this.currentDocumentFilter =
-            options.currentDocumentTaskIds !== undefined;
-        this.currentUserId = options.currentUserId;
         for (const view of VIEWS) {
             this.states.set(view, {
                 view,
@@ -90,6 +83,7 @@ export class TaskListStore {
                 total: 0,
                 status: "idle",
             });
+            this.filters.set(view, cloneFilters(DEFAULT_FILTERS));
             this.generations.set(view, 0);
         }
     }
@@ -99,15 +93,34 @@ export class TaskListStore {
         this.inboxProjectId = inboxProjectId;
     }
 
-    needsConfiguration(): boolean {
-        return this.origin.trim().length === 0;
+    needsConfiguration(view: TaskView = this.activeView): boolean {
+        return (
+            this.origin.trim().length === 0 ||
+            (view === "inbox" &&
+                (!this.inboxProjectId || this.inboxProjectId <= 0))
+        );
+    }
+
+    getConfigurationError(view: TaskView = this.activeView):
+        | "origin"
+        | "inbox"
+        | undefined {
+        if (this.origin.trim().length === 0) return "origin";
+        if (
+            view === "inbox" &&
+            (!this.inboxProjectId || this.inboxProjectId <= 0)
+        )
+            return "inbox";
+        return undefined;
     }
 
     getState(view: TaskView): TaskListState {
-        return {
-            ...this.states.get(view)!,
-            items: [...this.states.get(view)!.items],
-        };
+        const state = this.states.get(view)!;
+        return { ...state, items: [...state.items] };
+    }
+
+    getFilters(view: TaskView): TaskFilterState {
+        return cloneFilters(this.filters.get(view)!);
     }
 
     getTimeZone(): string {
@@ -130,156 +143,52 @@ export class TaskListStore {
 
     getVisibleItems(view: TaskView): TaskSummary[] {
         const state = this.states.get(view)!;
+        if (state.status !== "offline") return [...state.items];
+        const filters = this.filters.get(view)!;
         return state.items.filter((task) => {
-            const documentMatch =
-                !this.currentDocumentFilter ||
-                this.currentDocumentTaskIds.has(task.id);
-            const assignedMatch =
-                !this.assignedToMe ||
-                (this.currentUserId !== undefined &&
-                    (task.assignees ?? []).some(
-                        (user) => user.id === this.currentUserId,
-                    ));
-            return documentMatch && assignedMatch;
+            if (filters.incompleteOnly && task.done === true) return false;
+            if (
+                view === "all" &&
+                filters.projectIds.length > 0 &&
+                !filters.projectIds.includes(task.project?.id ?? task.projectId ?? 0)
+            )
+                return false;
+            if (
+                filters.labelIds.length > 0 &&
+                !(task.labels ?? []).some((label) =>
+                    filters.labelIds.includes(label.id),
+                )
+            )
+                return false;
+            return true;
         });
     }
 
-    setCurrentDocumentFilter(enabled: boolean): void {
-        this.currentDocumentFilter = enabled;
-        this.notify();
-    }
-
-    setCurrentDocumentTaskIds(ids: Set<number>): void {
-        this.currentDocumentTaskIds = new Set(ids);
-        this.notify();
-    }
-
-    setAssignedToMe(enabled: boolean, currentUserId?: number): void {
-        this.assignedToMe = enabled;
-        if (currentUserId !== undefined) this.currentUserId = currentUserId;
-        this.notify();
-    }
-
-    getFilterState(): { currentDocument: boolean; assignedToMe: boolean } {
-        return {
-            currentDocument: this.currentDocumentFilter,
-            assignedToMe: this.assignedToMe,
-        };
-    }
-
-    getGroups(
+    async setIncompleteOnly(
         view: TaskView,
-        now = new Date(),
-    ): Array<{
-        key:
-            | "overdue"
-            | "today"
-            | "next"
-            | "tomorrow"
-            | "thisWeek"
-            | "nextWeek"
-            | "later"
-            | "all";
-        items: TaskSummary[];
-    }> {
-        const items = this.getVisibleItems(view);
-        if (view === "focus") {
-            const groups: FocusGroups = groupFocusTasks(
-                items,
-                now,
-                this.timeZone,
-            );
-            return [
-                { key: "overdue", items: groups.overdue },
-                { key: "today", items: groups.today },
-                { key: "next", items: groups.next },
-            ];
-        }
-        if (view === "planned") {
-            const groups: PlannedGroups = groupPlannedTasks(
-                items,
-                now,
-                this.timeZone,
-            );
-            return [
-                { key: "tomorrow", items: groups.tomorrow },
-                { key: "thisWeek", items: groups.thisWeek },
-                { key: "nextWeek", items: groups.nextWeek },
-                { key: "later", items: groups.later },
-            ];
-        }
-        return [{ key: "all", items }];
-    }
-
-    async toggleDone(taskId: number, done: boolean): Promise<void> {
-        if (this.destroyed || this.needsConfiguration()) return;
-        const queued = this.doneQueues.get(taskId);
-        const operation = queued
-            ? queued.then(
-                  () => this.performToggleDone(taskId, done),
-                  () => this.performToggleDone(taskId, done),
-              )
-            : this.performToggleDone(taskId, done);
-        this.doneQueues.set(taskId, operation);
-        try {
-            await operation;
-        } finally {
-            if (this.doneQueues.get(taskId) === operation)
-                this.doneQueues.delete(taskId);
-        }
-    }
-
-    private async performToggleDone(
-        taskId: number,
-        done: boolean,
+        enabled: boolean,
     ): Promise<void> {
-        if (
-            this.destroyed ||
-            this.states.get(this.activeView)?.status === "offline" ||
-            this.pendingDone.has(taskId)
-        )
-            return;
-        const previous = new Map<TaskView, TaskSummary>();
-        for (const view of VIEWS) {
-            const item = this.states
-                .get(view)!
-                .items.find((candidate) => candidate.id === taskId);
-            if (item) previous.set(view, item);
-        }
-        if (previous.size === 0) return;
-        this.pendingDone.add(taskId);
-        for (const [view, item] of previous) {
-            this.replaceTaskInView(view, { ...item, done });
-        }
-        this.notify();
+        this.filters.set(view, {
+            ...this.filters.get(view)!,
+            incompleteOnly: enabled,
+        });
+        await this.refresh(view);
+    }
 
-        try {
-            const expected = previous.values().next().value?.updatedAt;
-            const result = await this.controller.call("vikunja.tasks.patch", {
-                taskId,
-                patch: { done },
-                ...(expected === undefined
-                    ? {}
-                    : { expected: { updatedAt: expected } }),
-            });
-            if (this.destroyed) {
-                for (const [view, item] of previous)
-                    this.replaceTaskInView(view, item);
-                return;
-            }
-            if (!result.ok) {
-                for (const [view, item] of previous)
-                    this.replaceTaskInView(view, item);
-                this.notify();
-                return;
-            }
-            const authoritative = result.data as TaskDetail;
-            for (const view of previous.keys())
-                this.replaceTaskInView(view, authoritative);
-            this.notify();
-        } finally {
-            this.pendingDone.delete(taskId);
-        }
+    async setProjectIds(view: TaskView, ids: number[]): Promise<void> {
+        this.filters.set(view, {
+            ...this.filters.get(view)!,
+            projectIds: normalizeIds(ids),
+        });
+        await this.refresh(view);
+    }
+
+    async setLabelIds(view: TaskView, ids: number[]): Promise<void> {
+        this.filters.set(view, {
+            ...this.filters.get(view)!,
+            labelIds: normalizeIds(ids),
+        });
+        await this.refresh(view);
     }
 
     subscribe(listener: () => void): () => void {
@@ -294,7 +203,10 @@ export class TaskListStore {
     }
 
     async refresh(view: TaskView = this.activeView): Promise<void> {
-        if (this.destroyed) return;
+        if (this.destroyed || this.needsConfiguration(view)) {
+            this.notify();
+            return;
+        }
         const previous = this.states.get(view)!;
         const generation = (this.generations.get(view) ?? 0) + 1;
         this.generations.set(view, generation);
@@ -305,16 +217,9 @@ export class TaskListStore {
         });
         this.notify();
 
-        const request: TaskQuery = {
-            view,
-            inboxProjectId: this.inboxProjectId,
-            page: 1,
-            perPage: previous.perPage,
-            timeZone: this.timeZone,
-        };
         const result = await this.controller.call(
             "vikunja.tasks.query",
-            request,
+            this.requestFor(view, 1, previous.perPage),
         );
         if (generation !== this.generations.get(view)) return;
         if (!result.ok) {
@@ -375,17 +280,10 @@ export class TaskListStore {
         if (state.page > 0 && state.items.length >= state.total) return;
         this.loadingMore = true;
         const generation = this.generations.get(view) ?? 0;
-        const request: TaskQuery = {
-            view,
-            inboxProjectId: this.inboxProjectId,
-            page: state.page + 1,
-            perPage: state.perPage,
-            timeZone: this.timeZone,
-        };
         try {
             const result = await this.controller.call(
                 "vikunja.tasks.query",
-                request,
+                this.requestFor(view, state.page + 1, state.perPage),
             );
             if (generation !== this.generations.get(view) || !result.ok) return;
             const page = result.data as Page<TaskSummary>;
@@ -408,6 +306,76 @@ export class TaskListStore {
             this.notify();
         } finally {
             this.loadingMore = false;
+        }
+    }
+
+    async toggleDone(taskId: number, done: boolean): Promise<void> {
+        if (this.destroyed || this.needsConfiguration(this.activeView)) return;
+        const queued = this.doneQueues.get(taskId);
+        const operation = queued
+            ? queued.then(
+                  () => this.performToggleDone(taskId, done),
+                  () => this.performToggleDone(taskId, done),
+              )
+            : this.performToggleDone(taskId, done);
+        this.doneQueues.set(taskId, operation);
+        try {
+            await operation;
+        } finally {
+            if (this.doneQueues.get(taskId) === operation)
+                this.doneQueues.delete(taskId);
+        }
+    }
+
+    private async performToggleDone(
+        taskId: number,
+        done: boolean,
+    ): Promise<void> {
+        if (
+            this.destroyed ||
+            this.states.get(this.activeView)?.status === "offline" ||
+            this.pendingDone.has(taskId)
+        )
+            return;
+        const previous = new Map<TaskView, TaskSummary>();
+        for (const view of VIEWS) {
+            const item = this.states
+                .get(view)!
+                .items.find((candidate) => candidate.id === taskId);
+            if (item) previous.set(view, item);
+        }
+        if (previous.size === 0) return;
+        this.pendingDone.add(taskId);
+        for (const [view, item] of previous)
+            this.replaceTaskInView(view, { ...item, done });
+        this.notify();
+
+        try {
+            const expected = previous.values().next().value?.updatedAt;
+            const result = await this.controller.call("vikunja.tasks.patch", {
+                taskId,
+                patch: { done },
+                ...(expected === undefined
+                    ? {}
+                    : { expected: { updatedAt: expected } }),
+            });
+            if (this.destroyed) {
+                for (const [view, item] of previous)
+                    this.replaceTaskInView(view, item);
+                return;
+            }
+            if (!result.ok) {
+                for (const [view, item] of previous)
+                    this.replaceTaskInView(view, item);
+                this.notify();
+                return;
+            }
+            const authoritative = result.data as TaskDetail;
+            for (const view of previous.keys())
+                this.replaceOrRemove(view, authoritative);
+            this.notify();
+        } finally {
+            this.pendingDone.delete(taskId);
         }
     }
 
@@ -440,6 +408,37 @@ export class TaskListStore {
         this.listeners.clear();
     }
 
+    private requestFor(
+        view: TaskView,
+        page: number,
+        perPage: number,
+    ): TaskQuery {
+        const filters = this.filters.get(view)!;
+        return {
+            view,
+            inboxProjectId: this.inboxProjectId,
+            page,
+            perPage,
+            timeZone: this.timeZone,
+            doneFilter: filters.incompleteOnly ? "open" : "all",
+            projectIds: view === "all" ? [...filters.projectIds] : [],
+            labelIds: [...filters.labelIds],
+        };
+    }
+
+    private replaceOrRemove(view: TaskView, summary: TaskSummary): void {
+        if (summary.done === true && this.filters.get(view)!.incompleteOnly) {
+            this.states.set(view, {
+                ...this.states.get(view)!,
+                items: this.states.get(view)!.items.filter(
+                    (item) => item.id !== summary.id,
+                ),
+            });
+            return;
+        }
+        this.replaceTaskInView(view, summary);
+    }
+
     private replaceTaskInView(view: TaskView, summary: TaskSummary): void {
         const state = this.states.get(view)!;
         this.states.set(view, {
@@ -468,6 +467,20 @@ export class TaskListStore {
     private notify(): void {
         for (const listener of this.listeners) listener();
     }
+}
+
+function normalizeIds(ids: number[]): number[] {
+    return [...new Set(ids)].filter(
+        (id) => Number.isSafeInteger(id) && id > 0,
+    );
+}
+
+function cloneFilters(filters: TaskFilterState): TaskFilterState {
+    return {
+        incompleteOnly: filters.incompleteOnly,
+        projectIds: [...filters.projectIds],
+        labelIds: [...filters.labelIds],
+    };
 }
 
 function uniqueTasks(items: TaskSummary[]): TaskSummary[] {

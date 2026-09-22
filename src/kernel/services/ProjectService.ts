@@ -42,12 +42,14 @@ interface TaskGatewayLike {
     query: (
         credentials: VikunjaCredentials,
         query: {
-            view: "focus" | "inbox" | "planned";
+            view: "inbox" | "all";
             inboxProjectId?: number;
             page: number;
             perPage: number;
             timeZone: string;
-            doneFilter?: "open" | "done" | "all";
+            doneFilter: "open" | "all";
+            projectIds: number[];
+            labelIds: number[];
         },
     ) => Promise<{ data: { total: number; page?: number; perPage?: number } }>;
 }
@@ -184,6 +186,8 @@ export class ProjectService {
                     perPage: 1,
                     timeZone: "UTC",
                     doneFilter: "open",
+                    projectIds: [],
+                    labelIds: [],
                 });
                 const completed = await this.tasks.query(credentials, {
                     view: "inbox",
@@ -191,7 +195,9 @@ export class ProjectService {
                     page: 1,
                     perPage: 1,
                     timeZone: "UTC",
-                    doneFilter: "done",
+                    doneFilter: "all",
+                    projectIds: [],
+                    labelIds: [],
                 });
                 // The paginated `total` is authoritative for a count, so only a
                 // failed request or an incomplete project listing marks the

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { TaskListStore } from "../../src/frontend/stores/TaskListStore.js";
 import { TaskDetail, TaskSummary } from "../../src/shared/task.js";
 
-function task(id: number, title = `Task ${id}`): TaskSummary {
+function task(
+    id: number,
+    title = `Task ${id}`,
+    overrides: Partial<TaskSummary> = {},
+): TaskSummary {
     return {
         id,
         title,
@@ -16,6 +20,14 @@ function task(id: number, title = `Task ${id}`): TaskSummary {
         attachmentCount: 0,
         linkedBlockCount: 0,
         updatedAt: "2026-09-13T00:00:00Z",
+        ...overrides,
+    };
+}
+
+function page(items: TaskSummary[], total = items.length, pageNumber = 1) {
+    return {
+        ok: true as const,
+        data: { items, total, page: pageNumber, perPage: 2 },
     };
 }
 
@@ -28,325 +40,257 @@ function deferred<T>() {
 }
 
 describe("TaskListStore", () => {
-    it("reports that it needs configuration until an Origin is set", () => {
+    it("requires Origin for both views and an Inbox project only for Inbox", () => {
         const controller = { call: vi.fn() };
         const store = new TaskListStore({
             controller: controller as never,
             origin: "  ",
             timeZone: "UTC",
         });
-        expect(store.needsConfiguration()).toBe(true);
+        expect(store.needsConfiguration("inbox")).toBe(true);
+        expect(store.needsConfiguration("all")).toBe(true);
         store.updateConfig("https://tasks.example", null);
-        expect(store.needsConfiguration()).toBe(false);
+        expect(store.needsConfiguration("inbox")).toBe(true);
+        expect(store.needsConfiguration("all")).toBe(false);
+        expect(store.getConfigurationError("inbox")).toBe("inbox");
     });
 
-    it("keeps independent view state and ignores a late response from an old generation", async () => {
-        const focus = deferred<{
-            ok: true;
-            data: {
-                items: TaskSummary[];
-                total: number;
-                page: number;
-                perPage: number;
-            };
-        }>();
+    it("defaults to Inbox and keeps filter state independent per view", async () => {
+        const call = vi.fn().mockResolvedValue(page([]));
+        const store = new TaskListStore({
+            controller: { call } as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+
+        await store.activate("inbox");
+        await store.setLabelIds("inbox", [3, 4, 3]);
+        await store.setIncompleteOnly("all", false);
+        await store.setProjectIds("all", [8, 9, 8]);
+
+        expect(store.getFilters("inbox")).toEqual({
+            incompleteOnly: true,
+            projectIds: [],
+            labelIds: [3, 4],
+        });
+        expect(store.getFilters("all")).toEqual({
+            incompleteOnly: false,
+            projectIds: [8, 9],
+            labelIds: [],
+        });
+        expect(call.mock.calls.at(-1)?.[1]).toMatchObject({
+            view: "all",
+            doneFilter: "all",
+            projectIds: [8, 9],
+            labelIds: [],
+        });
+    });
+
+    it("sends Inbox and All queries with the correct structured filters", async () => {
+        const call = vi.fn().mockResolvedValue(page([]));
+        const store = new TaskListStore({
+            controller: { call } as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+
+        await store.refresh("inbox");
+        expect(call).toHaveBeenLastCalledWith(
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "inbox",
+                inboxProjectId: 7,
+                doneFilter: "open",
+                projectIds: [],
+                labelIds: [],
+            }),
+        );
+
+        await store.setLabelIds("inbox", [4]);
+        expect(call).toHaveBeenLastCalledWith(
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "inbox",
+                doneFilter: "open",
+                projectIds: [],
+                labelIds: [4],
+            }),
+        );
+
+        await store.setProjectIds("all", [2]);
+        await store.setLabelIds("all", [3]);
+        expect(call).toHaveBeenLastCalledWith(
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "all",
+                doneFilter: "open",
+                projectIds: [2],
+                labelIds: [3],
+            }),
+        );
+    });
+
+    it("resets pagination and carries filters into the next page", async () => {
         const controller = {
             call: vi
                 .fn()
-                .mockImplementationOnce(() => focus.promise)
+                .mockResolvedValueOnce(page([task(1), task(2)], 3, 1))
+                .mockResolvedValueOnce(page([task(2)], 3, 1))
+                .mockResolvedValueOnce(page([task(3)], 3, 2)),
+        };
+        const store = new TaskListStore({
+            controller: controller as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+
+        await store.activate("all");
+        await store.setLabelIds("all", [4]);
+        await store.loadNextPage();
+
+        expect(controller.call).toHaveBeenNthCalledWith(
+            2,
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "all",
+                page: 1,
+                labelIds: [4],
+            }),
+        );
+        expect(controller.call).toHaveBeenNthCalledWith(
+            3,
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "all",
+                page: 2,
+                labelIds: [4],
+            }),
+        );
+        expect(store.getState("all").items.map((item) => item.id)).toEqual([
+            2,
+            3,
+        ]);
+    });
+
+    it("ignores a late response from an older generation", async () => {
+        const first = deferred<ReturnType<typeof page>>();
+        const controller = {
+            call: vi
+                .fn()
+                .mockImplementationOnce(() => first.promise)
+                .mockResolvedValueOnce(page([task(2, "New")])) ,
+        };
+        const store = new TaskListStore({
+            controller: controller as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+
+        const oldRefresh = store.refresh("inbox");
+        const newRefresh = store.refresh("inbox");
+        await newRefresh;
+        first.resolve(page([task(1, "Old")]));
+        await oldRefresh;
+        expect(store.getState("inbox").items.map((item) => item.title)).toEqual(
+            ["New"],
+        );
+    });
+
+    it("removes a completed task from open views but keeps it in all-status views", async () => {
+        const authoritative: TaskDetail = {
+            ...task(1),
+            done: true,
+            descriptionMarkdown: "",
+            reminders: [],
+            repeat: { kind: "none" },
+            attachments: [],
+            maxPermission: "write",
+            etag: "v2",
+        };
+        const controller = {
+            call: vi
+                .fn()
+                .mockResolvedValueOnce(page([task(1)]))
+                .mockResolvedValueOnce(page([task(1)]))
+                .mockResolvedValueOnce({ ok: true, data: authoritative }),
+        };
+        const store = new TaskListStore({
+            controller: controller as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+        await store.refresh("inbox");
+        await store.setIncompleteOnly("all", false);
+        await store.toggleDone(1, true);
+
+        expect(store.getState("inbox").items).toEqual([]);
+        expect(store.getState("all").items[0]).toMatchObject({
+            id: 1,
+            done: true,
+        });
+    });
+
+    it("rolls back a failed completion and gates offline writes", async () => {
+        const controller = {
+            call: vi
+                .fn()
+                .mockResolvedValueOnce(page([task(1)]))
                 .mockResolvedValueOnce({
-                    ok: true,
-                    data: {
-                        items: [task(2, "Inbox")],
-                        total: 1,
-                        page: 1,
-                        perPage: 50,
-                    },
+                    ok: false,
+                    error: { code: "CONFLICT", message: "changed", retryable: false },
                 }),
         };
         const store = new TaskListStore({
             controller: controller as never,
             origin: "https://tasks.example",
-            timeZone: "Asia/Shanghai",
+            timeZone: "UTC",
+            inboxProjectId: 7,
         });
-        const focusPromise = store.refresh("focus");
         await store.refresh("inbox");
-        focus.resolve({
-            ok: true,
-            data: {
-                items: [task(1, "Late focus")],
-                total: 1,
-                page: 1,
-                perPage: 50,
-            },
-        });
-        await focusPromise;
-        expect(store.getState("inbox").items.map((item) => item.title)).toEqual(
-            ["Inbox"],
-        );
-        expect(store.getState("focus").items.map((item) => item.title)).toEqual(
-            ["Late focus"],
-        );
-    });
-
-    it("uses explicit filter enablement and composes filters as an intersection", async () => {
-        const call = vi.fn().mockResolvedValue({
-            ok: true,
-            data: {
-                items: [
-                    task(1),
-                    {
-                        ...task(2),
-                        assignees: [
-                            { id: 42, username: "me", displayName: "Me" },
-                        ],
-                    },
-                    task(3),
-                ],
-                total: 3,
-                page: 1,
-                perPage: 50,
-            },
-        });
-        const store = new TaskListStore({
-            controller: { call } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        await store.refresh("focus");
-
-        store.setCurrentDocumentFilter(true);
-        store.setCurrentDocumentTaskIds(new Set([2]));
-        expect(store.getVisibleItems("focus").map((item) => item.id)).toEqual([
-            2,
-        ]);
-
-        store.setAssignedToMe(true, 42);
-        expect(store.getVisibleItems("focus").map((item) => item.id)).toEqual([
-            2,
-        ]);
-        expect(store.getFilterState()).toEqual({
-            currentDocument: true,
-            assignedToMe: true,
-        });
-
-        store.setCurrentDocumentFilter(false);
-        expect(store.getVisibleItems("focus").map((item) => item.id)).toEqual([
-            2,
-        ]);
-        store.setAssignedToMe(false);
-        expect(store.getVisibleItems("focus").map((item) => item.id)).toEqual([
-            1, 2, 3,
-        ]);
-    });
-
-    it("treats an enabled current-document filter with no links as an empty result", async () => {
-        const call = vi.fn().mockResolvedValue({
-            ok: true,
-            data: { items: [task(1)], total: 1, page: 1, perPage: 50 },
-        });
-        const store = new TaskListStore({
-            controller: { call } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        await store.refresh("focus");
-        store.setCurrentDocumentFilter(true);
-        store.setCurrentDocumentTaskIds(new Set());
-        expect(store.getVisibleItems("focus")).toEqual([]);
-    });
-
-    it("exposes shared focus and planned groups without completed tasks or duplicates", async () => {
-        const call = vi.fn().mockResolvedValue({
-            ok: true,
-            data: {
-                items: [
-                    { ...task(1), dueAt: "2026-09-12T12:00:00Z" },
-                    { ...task(2), dueAt: "2026-09-13T12:00:00Z" },
-                    { ...task(3), priority: 2 },
-                    { ...task(4), dueAt: "2026-09-14T12:00:00Z" },
-                    { ...task(5), dueAt: "2026-09-20T12:00:00Z", done: true },
-                    { ...task(6), dueAt: "2026-09-21T12:00:00Z" },
-                ],
-                total: 6,
-                page: 1,
-                perPage: 50,
-            },
-        });
-        const store = new TaskListStore({
-            controller: { call } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        await store.refresh("focus");
-        await store.refresh("planned");
-
-        expect(
-            store.getGroups("focus", new Date("2026-09-13T12:00:00Z")),
-        ).toEqual([
-            { key: "overdue", items: [expect.objectContaining({ id: 1 })] },
-            { key: "today", items: [expect.objectContaining({ id: 2 })] },
-            { key: "next", items: [expect.objectContaining({ id: 3 })] },
-        ]);
-        expect(
-            store.getGroups("planned", new Date("2026-09-13T12:00:00Z")),
-        ).toEqual([
-            { key: "tomorrow", items: [expect.objectContaining({ id: 4 })] },
-            { key: "thisWeek", items: [] },
-            { key: "nextWeek", items: [] },
-            { key: "later", items: [expect.objectContaining({ id: 6 })] },
-        ]);
-    });
-
-    it("optimistically completes a task and accepts the authoritative repeating response", async () => {
-        const authoritative: TaskDetail = {
-            ...task(1),
-            done: true,
-            dueAt: "2026-09-20T12:00:00Z",
-            descriptionMarkdown: "",
-            reminders: [],
-            repeat: { kind: "editable", every: 1, unit: "week" },
-            attachments: [],
-            maxPermission: "write",
-            etag: "v2",
-        };
-        const call = vi
-            .fn()
-            .mockResolvedValueOnce({
-                ok: true,
-                data: { items: [task(1)], total: 1, page: 1, perPage: 50 },
-            })
-            .mockResolvedValueOnce({ ok: true, data: authoritative });
-        const store = new TaskListStore({
-            controller: { call } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        await store.refresh("focus");
-
         await store.toggleDone(1, true);
-
-        expect(call).toHaveBeenCalledWith("vikunja.tasks.patch", {
-            taskId: 1,
-            patch: { done: true },
-            expected: { updatedAt: "2026-09-13T00:00:00Z" },
-        });
-        expect(store.getState("focus").items[0]).toMatchObject({
-            id: 1,
-            done: true,
-            dueAt: "2026-09-20T12:00:00Z",
-        });
-    });
-
-    it("rolls back a failed completion and gates writes offline or after destroy", async () => {
-        const call = vi.fn().mockResolvedValue({
-            ok: false,
-            error: { code: "CONFLICT", message: "changed", retryable: false },
-        });
-        const store = new TaskListStore({
-            controller: { call } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        call.mockResolvedValueOnce({
-            ok: true,
-            data: { items: [task(1)], total: 1, page: 1, perPage: 50 },
-        });
-        await store.refresh("focus");
-        await store.toggleDone(1, true);
-        expect(store.getState("focus").items[0].done).toBe(false);
+        expect(store.getState("inbox").items[0].done).toBe(false);
 
         const offlineCall = vi
             .fn()
-            .mockResolvedValueOnce({
-                ok: true,
-                data: { items: [task(1)], total: 1, page: 1, perPage: 50 },
-            })
+            .mockResolvedValueOnce(page([task(1)]))
             .mockResolvedValueOnce({
                 ok: false,
-                error: {
-                    code: "NETWORK_ERROR",
-                    message: "offline",
-                    retryable: true,
-                },
+                error: { code: "NETWORK_ERROR", message: "offline", retryable: true },
             });
         const offlineStore = new TaskListStore({
             controller: { call: offlineCall } as never,
             origin: "https://tasks.example",
             timeZone: "UTC",
+            inboxProjectId: 7,
         });
-        await offlineStore.refresh("focus");
-        await offlineStore.refresh("focus");
+        await offlineStore.refresh("inbox");
+        await offlineStore.refresh("inbox");
         await offlineStore.toggleDone(1, true);
         expect(offlineCall).toHaveBeenCalledTimes(2);
-        expect(offlineStore.getState("focus").status).toBe("offline");
-
-        const late = deferred<unknown>();
-        const destroyedCall = vi
-            .fn()
-            .mockResolvedValueOnce({
-                ok: true,
-                data: { items: [task(1)], total: 1, page: 1, perPage: 50 },
-            })
-            .mockReturnValueOnce(late.promise);
-        const destroyedStore = new TaskListStore({
-            controller: { call: destroyedCall } as never,
-            origin: "https://tasks.example",
-            timeZone: "UTC",
-        });
-        await destroyedStore.refresh("focus");
-        const toggle = destroyedStore.toggleDone(1, true);
-        destroyedStore.destroy();
-        late.resolve({
-            ok: true,
-            data: { ...task(1), done: true, dueAt: "2026-09-30T00:00:00Z" },
-        });
-        await toggle;
-        expect(destroyedCall).toHaveBeenCalledWith(
-            "vikunja.tasks.patch",
-            expect.anything(),
-        );
-        expect(destroyedStore.getState("focus").items[0].done).toBe(false);
-        expect(destroyedStore.getState("focus").items[0].dueAt).toBeNull();
+        expect(offlineStore.getState("inbox").status).toBe("offline");
     });
 
-    it("appends pages once and composes current-document and assigned filters", async () => {
+    it("deduplicates appended pages and preserves visible ordering", async () => {
         const controller = {
             call: vi
                 .fn()
-                .mockResolvedValueOnce({
-                    ok: true,
-                    data: {
-                        items: [task(1), task(2)],
-                        total: 3,
-                        page: 1,
-                        perPage: 2,
-                    },
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    data: {
-                        items: [task(2), task(3)],
-                        total: 3,
-                        page: 2,
-                        perPage: 2,
-                    },
-                }),
+                .mockResolvedValueOnce(page([task(1), task(2)], 3, 1))
+                .mockResolvedValueOnce(page([task(2), task(3)], 3, 2)),
         };
         const store = new TaskListStore({
             controller: controller as never,
             origin: "https://tasks.example",
             timeZone: "UTC",
-            currentDocumentTaskIds: new Set([2, 3]),
-            currentUserId: 9,
         });
-        await store.refresh("focus");
+        await store.activate("all");
         await store.loadNextPage();
-        expect(store.getState("focus").items.map((item) => item.id)).toEqual([
+        expect(store.getState("all").items.map((item) => item.id)).toEqual([
             1, 2, 3,
-        ]);
-        expect(store.getVisibleItems("focus").map((item) => item.id)).toEqual([
-            2, 3,
         ]);
     });
 });

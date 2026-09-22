@@ -15,7 +15,7 @@ interface StoredCache {
     schemaVersion: 1;
     origins: Record<
         string,
-        Partial<Record<"focus" | "inbox" | "planned", StoredSnapshot>>
+        Partial<Record<"inbox" | "all", StoredSnapshot>>
     >;
 }
 
@@ -35,7 +35,7 @@ export class SummaryCache {
 
     async load(
         origin: string,
-        view: "focus" | "inbox" | "planned",
+        view: "inbox" | "all",
     ): Promise<(SummaryPageSnapshot & { savedAt: number }) | null> {
         const value = await this.storage.load(STORAGE_NAME);
         const parsed = parseStoredCache(value);
@@ -46,7 +46,7 @@ export class SummaryCache {
 
     async save(
         origin: string,
-        view: "focus" | "inbox" | "planned",
+        view: "inbox" | "all",
         snapshot: SummaryPageSnapshot,
     ): Promise<void> {
         const current =

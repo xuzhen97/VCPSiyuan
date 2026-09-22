@@ -53,6 +53,7 @@ export interface TaskDetailViewOptions {
     onAttachmentRetry?: (itemId: string) => void;
     onAttachmentDownload?: (itemId: string) => void;
     onAttachmentPreview?: (itemId: string) => void;
+    onAttachmentThumbnail?: (itemId: string) => Promise<Blob | undefined>;
     onAttachmentDelete?: (itemId: string) => void;
     canUploadAttachments?: boolean;
     canDeleteAttachments?: boolean;
@@ -245,6 +246,9 @@ export class TaskDetailView {
             disabled.textContent = i18n.attachmentsDisabled;
             section.append(disabled);
         } else {
+            const upload = document.createElement("label");
+            upload.className = "vcp-siyuan-task-detail__attachment-upload";
+            upload.textContent = `☁ ${i18n.uploadAttachment}`;
             const select = document.createElement("input");
             select.type = "file";
             select.multiple = true;
@@ -258,7 +262,8 @@ export class TaskDetailView {
                     this.options.onAttachmentSelect?.([...select.files]);
                 select.value = "";
             });
-            section.append(select);
+            upload.append(select);
+            section.append(upload);
             if (this.options.attachmentLimitBytes !== undefined) {
                 const limit = document.createElement("small");
                 limit.textContent = i18n.attachmentLimit(
@@ -277,6 +282,7 @@ export class TaskDetailView {
                     onRetry: (id) => this.options.onAttachmentRetry?.(id),
                     onDownload: (id) => this.options.onAttachmentDownload?.(id),
                     onPreview: (id) => this.options.onAttachmentPreview?.(id),
+                    loadThumbnail: (id) => this.options.onAttachmentThumbnail?.(id) ?? Promise.resolve(undefined),
                     onDelete: (id) => this.options.onAttachmentDelete?.(id),
                     canDelete:
                         this.options.canDeleteAttachments !== false &&

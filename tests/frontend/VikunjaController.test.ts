@@ -20,10 +20,13 @@ describe("VikunjaController", () => {
         });
 
         await controller.call("vikunja.tasks.query", {
-            view: "focus",
+            view: "all",
             page: 1,
             perPage: 50,
             timeZone: "Asia/Shanghai",
+            doneFilter: "open",
+            projectIds: [],
+            labelIds: [],
         });
 
         expect(getSecret).toHaveBeenCalledWith("VIKUNJA_API_TOKEN");
@@ -33,10 +36,13 @@ describe("VikunjaController", () => {
                 token: "token-value",
             },
             request: {
-                view: "focus",
+                view: "all",
                 page: 1,
                 perPage: 50,
                 timeZone: "Asia/Shanghai",
+                doneFilter: "open",
+                projectIds: [],
+                labelIds: [],
             },
         });
     });

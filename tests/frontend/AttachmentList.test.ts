@@ -92,7 +92,11 @@ describe("AttachmentList", () => {
         expect(buttons).toHaveLength(2);
         buttons[0].dispatchEvent(new MouseEvent("click"));
         expect(onPreview).toHaveBeenCalledWith("file-3");
-        expect(buttons[0].textContent).toBe(attachmentListI18n.preview);
+        expect(buttons[0].getAttribute("aria-label")).toContain(
+            attachmentListI18n.preview,
+        );
+        expect(host.querySelector("button[data-action='preview-name']")?.textContent)
+            .toBe("draft.png");
     });
 
     it("hides the preview action for non-images and for hosts without a viewer", () => {

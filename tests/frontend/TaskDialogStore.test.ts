@@ -132,13 +132,13 @@ describe("TaskDialogStore", () => {
         expect(store.isDirty()).toBe(false);
     });
 
-    it("uses entry-specific Block defaults", () => {
+    it("keeps Block linking disabled until explicitly selected", () => {
         expect(
             TaskDialogStore.create({
                 projectId: 2,
                 linkedBlockId: "block-1",
             }).getBlockLink(),
-        ).toEqual({ enabled: true, blockId: "block-1" });
+        ).toEqual({ enabled: false, blockId: "block-1" });
         expect(TaskDialogStore.create({ projectId: 2 }).getBlockLink()).toEqual(
             { enabled: false, blockId: undefined },
         );

@@ -88,7 +88,7 @@ export class TaskDialogStore {
         this.repeat = { kind: "none" };
         this.loadValues(original, createContext?.projectId ?? 0);
         this.blockLink = {
-            enabled: Boolean(createContext?.linkedBlockId),
+            enabled: false,
             blockId: createContext?.linkedBlockId,
             summary: createContext?.linkedBlockSummary,
         };
@@ -226,6 +226,10 @@ export class TaskDialogStore {
 
     getBlockLink(): BlockLinkState {
         return { ...this.blockLink };
+    }
+
+    setBlockLinkEnabled(enabled: boolean): void {
+        this.blockLink.enabled = enabled && Boolean(this.blockLink.blockId);
     }
 
     getProjectId(): number {

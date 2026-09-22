@@ -28,6 +28,7 @@ function createStore(result: unknown): TaskListStore {
         controller: { call: vi.fn().mockResolvedValue(result) } as never,
         origin: "https://tasks.example",
         timeZone: "UTC",
+        inboxProjectId: 1,
     });
 }
 
@@ -74,10 +75,7 @@ describe("Dock prototype states", () => {
         ).not.toBeNull();
         expect(
             element.querySelector(".vcp-siyuan-dock__tabs")?.textContent,
-        ).toContain("Focus (3)");
-        expect(
-            element.querySelector(".vcp-siyuan-dock__group-title")?.textContent,
-        ).toBe(dockI18n.groupLabel("today"));
+        ).toContain(`${dockI18n.inbox} (3)`);
         expect(
             element.querySelector(".vcp-siyuan-dock__task-labels")?.textContent,
         ).toContain("Writing");
@@ -92,9 +90,10 @@ describe("Dock prototype states", () => {
         expect(
             element.querySelector(".vcp-siyuan-dock__task-blocks")?.textContent,
         ).toContain("1");
+        // Open is the only button left in the row: completion is a checkbox.
         expect(
             element.querySelectorAll(".vcp-siyuan-dock__task button").length,
-        ).toBe(2);
+        ).toBe(1);
         expect(
             element
                 .querySelector(".vcp-siyuan-dock__task")
@@ -116,13 +115,9 @@ describe("Dock prototype states", () => {
             ok: true,
             data: { items: [], total: 0, page: 1, perPage: 50 },
         });
-        const current = vi.fn();
-        const assigned = vi.fn();
         const dock = new VikunjaDock({
             store,
             openSettings: vi.fn(),
-            onCurrentDocumentFilterChange: current,
-            onAssignedToMeFilterChange: assigned,
             i18n: dockI18n,
         });
         const element = document.createElement("div");
@@ -131,16 +126,7 @@ describe("Dock prototype states", () => {
             expect(element.textContent).toContain(dockI18n.empty),
         );
 
-        element
-            .querySelector<HTMLButtonElement>(
-                "[data-filter='current-document']",
-            )
-            ?.click();
-        element
-            .querySelector<HTMLButtonElement>("[data-filter='assigned-to-me']")
-            ?.click();
-        expect(current).toHaveBeenCalledWith(true);
-        expect(assigned).toHaveBeenCalledWith(true);
+        expect(element.querySelector("[data-filter='incomplete']")).not.toBeNull();
     });
 
     it("disables creating and completion in offline and unconfigured states", async () => {

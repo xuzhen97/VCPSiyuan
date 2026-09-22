@@ -7,22 +7,64 @@ export interface ResourceStoreOptions {
     controller: Pick<VikunjaController, "call">;
 }
 
+export type ResourceStatus = "idle" | "loading" | "ready" | "error";
+
+export interface ResourceStoreState {
+    projects: Project[];
+    labels: Label[];
+    status: ResourceStatus;
+    error?: string;
+}
+
 export class ResourceStore {
     private readonly controller: ResourceStoreOptions["controller"];
     private projects: Project[] = [];
     private labels: Label[] = [];
+    private status: ResourceStatus = "idle";
+    private error?: string;
+    private readonly listeners = new Set<() => void>();
 
     constructor(options: ResourceStoreOptions) {
         this.controller = options.controller;
     }
 
     async refresh(): Promise<void> {
-        const [projects, labels] = await Promise.all([
-            this.loadProjects(),
-            this.loadLabels(),
-        ]);
-        this.setProjects(projects);
-        this.labels = labels;
+        this.status = "loading";
+        this.error = undefined;
+        this.notify();
+        try {
+            const [projects, labels] = await Promise.all([
+                this.loadProjects(),
+                this.loadLabels(),
+            ]);
+            this.setProjects(projects);
+            this.labels = labels;
+            this.status = "ready";
+            this.notify();
+        } catch (error) {
+            this.status = "error";
+            this.error = error instanceof Error ? error.message : "Resource load failed";
+            this.notify();
+            throw error;
+        }
+    }
+
+    getState(): ResourceStoreState {
+        return {
+            projects: this.getProjects(),
+            labels: this.getLabels(),
+            status: this.status,
+            error: this.error,
+        };
+    }
+
+    subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    private notify(): void {
+        for (const listener of this.listeners) listener();
     }
 
     async createProject(

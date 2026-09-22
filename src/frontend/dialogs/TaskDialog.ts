@@ -4,6 +4,11 @@ import { EditableRepeatRule, TaskDetail, UserRef } from "../../shared/task.js";
 import { TaskDialogStore } from "../stores/TaskDialogStore.js";
 import { AttachmentList } from "./AttachmentList.js";
 import { AttachmentStore } from "../stores/AttachmentStore.js";
+import {
+    createMultiSelectFilter,
+    MultiSelectFilterElement,
+    MultiSelectOption,
+} from "../dock/MultiSelectFilter.js";
 
 export interface TaskDialogI18n {
     titleLabel: string;
@@ -76,6 +81,7 @@ export interface TaskDialogOptions {
     onAttachmentRetry?: (itemId: string) => void;
     onAttachmentDownload?: (itemId: string) => void;
     onAttachmentPreview?: (itemId: string) => void;
+    onAttachmentThumbnail?: (itemId: string) => Promise<Blob | undefined>;
     onAttachmentDelete?: (itemId: string) => void;
     confirmAttachmentDelete?: (itemId: string) => boolean | Promise<boolean>;
     canUploadAttachments?: boolean;
@@ -86,7 +92,9 @@ export class TaskDialog {
     private readonly options: TaskDialogOptions;
     private container?: HTMLElement;
     private titleInput?: HTMLInputElement;
-    private assigneesSelect?: HTMLSelectElement;
+    private projectFilter?: MultiSelectFilterElement;
+    private labelFilter?: MultiSelectFilterElement;
+    private assigneeFilter?: MultiSelectFilterElement;
     private assigneeSearchTimer?: ReturnType<typeof setTimeout>;
     private assigneeSearchGeneration = 0;
     private opener?: HTMLElement;
@@ -137,6 +145,12 @@ export class TaskDialog {
         this.attachmentUnsubscribe = undefined;
         this.attachmentList?.destroy();
         this.attachmentList = undefined;
+        this.projectFilter?.destroy();
+        this.labelFilter?.destroy();
+        this.assigneeFilter?.destroy();
+        this.projectFilter = undefined;
+        this.labelFilter = undefined;
+        this.assigneeFilter = undefined;
         this.container?.replaceChildren();
         this.container = undefined;
         if (this.opener?.isConnected) this.opener.focus();
@@ -230,44 +244,35 @@ export class TaskDialog {
         form.append(this.field(i18n.titleLabel, this.titleInput));
 
         if (this.options.projects) {
-            const project = document.createElement("select");
-            project.name = "projectId";
-            project.required = true;
-            project.className = "b3-text-field";
-            for (const item of this.options.projects) {
-                const option = document.createElement("option");
-                option.value = String(item.id);
-                const path = this.options.projectPath?.(item.id) || item.title;
-                option.textContent = item.archived
-                    ? `${path} (${item.id})`
-                    : path;
-                option.disabled = item.archived && item.id !== draft.projectId;
-                option.selected = item.id === draft.projectId;
-                project.append(option);
-            }
-            project.addEventListener("change", () => {
-                const projectId = Number(project.value);
-                store.setField("projectId", projectId);
-                if (this.assigneeSearchTimer !== undefined)
-                    clearTimeout(this.assigneeSearchTimer);
-                this.assigneeSearchTimer = undefined;
-                const generation = ++this.assigneeSearchGeneration;
-                void Promise.resolve(this.options.onProjectChange?.(projectId))
-                    .then((assignees) => {
-                        if (
-                            generation === this.assigneeSearchGeneration &&
-                            store.getProjectId() === projectId &&
-                            assignees
-                        )
-                            this.updateAssigneeOptions(assignees);
-                    })
-                    .catch(() => {
-                        // Keep the current candidate set when a project-scoped
-                        // member lookup fails; the save path still validates the
-                        // selected IDs against the server.
-                    });
+            const projectOptions = this.options.projects.map((item) => ({
+                id: item.id,
+                label: this.options.projectPath?.(item.id) || item.title,
+                disabled: item.archived && item.id !== draft.projectId,
+                color: item.color,
+            }));
+            const projectId = document.createElement("input");
+            projectId.type = "hidden";
+            projectId.name = "projectId";
+            projectId.value = String(draft.projectId || "");
+            const project = createMultiSelectFilter({
+                key: "project",
+                label: i18n.projectLabel,
+                mode: "single",
+                clearable: false,
+                selectedIds: draft.projectId ? [draft.projectId] : [],
+                options: projectOptions,
+                onChange: ([nextProjectId]) => {
+                    projectId.value = String(nextProjectId ?? "");
+                    if (nextProjectId === undefined) return;
+                    store.setField("projectId", nextProjectId);
+                    this.loadProjectAssignees(store, nextProjectId);
+                },
             });
-            form.append(this.field(i18n.projectLabel, project));
+            this.projectFilter = project;
+            const control = document.createElement("div");
+            control.className = "vcp-siyuan-task-dialog__choice-control";
+            control.append(project, projectId);
+            form.append(this.field(i18n.projectLabel, control));
         }
 
         const startAt = this.createDateInput(
@@ -296,90 +301,78 @@ export class TaskDialog {
         form.append(this.field(i18n.priorityLabel, priority));
 
         if (this.options.labels) {
-            const labels = document.createElement("select");
-            labels.name = "labels";
-            labels.multiple = true;
-            labels.className = "b3-text-field";
-            labels.size = Math.min(5, Math.max(2, this.options.labels.length));
-            const selected = new Set(draft.labelIds);
-            for (const item of this.options.labels) {
-                const option = document.createElement("option");
-                option.value = String(item.id);
-                option.textContent = item.title;
-                option.selected = selected.has(item.id);
-                labels.append(option);
-            }
-            labels.addEventListener("change", () =>
-                store.setLabels(selectedValues(labels)),
+            const labelOptions = this.options.labels.map((item) => ({
+                id: item.id,
+                label: item.title,
+                color: item.color,
+            }));
+            const chips = document.createElement("div");
+            chips.className = "vcp-siyuan-task-dialog__choice-chips";
+            const labelsRef: { current?: MultiSelectFilterElement } = {};
+            const syncLabels = (ids: number[]) => {
+                store.setLabels(ids);
+                labelsRef.current?.setSelected(ids);
+                this.renderChoiceChips(chips, labelOptions, ids, (id) =>
+                    syncLabels(ids.filter((item) => item !== id)),
+                );
+            };
+            const labels = createMultiSelectFilter({
+                key: "label",
+                label: i18n.labelsLabel,
+                selectedIds: draft.labelIds,
+                options: labelOptions,
+                onChange: syncLabels,
+            });
+            labelsRef.current = labels;
+            this.labelFilter = labels;
+            const control = document.createElement("div");
+            control.className = "vcp-siyuan-task-dialog__choice-control";
+            control.append(labels, chips);
+            this.renderChoiceChips(chips, labelOptions, draft.labelIds, (id) =>
+                syncLabels(draft.labelIds.filter((item) => item !== id)),
             );
-            form.append(this.field(i18n.labelsLabel, labels));
+            form.append(this.field(i18n.labelsLabel, control));
         }
 
         if (this.options.assignees) {
-            const assigneeControls = document.createElement("div");
-            assigneeControls.className = "vcp-siyuan-task-dialog__assignees";
-            const search = document.createElement("input");
-            search.type = "search";
-            search.name = "assigneeSearch";
-            search.className = "b3-text-field";
-            search.placeholder = i18n.assigneeSearchPlaceholder;
-            search.addEventListener("input", () => {
-                if (this.assigneeSearchTimer !== undefined)
-                    clearTimeout(this.assigneeSearchTimer);
-                const query = search.value.trim();
-                const projectId = store.getProjectId();
-                const generation = ++this.assigneeSearchGeneration;
-                this.assigneeSearchTimer = setTimeout(() => {
-                    void Promise.resolve(
-                        this.options.onAssigneeSearch?.(projectId, query),
-                    )
-                        .then((assignees) => {
-                            if (
-                                generation === this.assigneeSearchGeneration &&
-                                assignees
-                            )
-                                this.updateAssigneeOptions(assignees);
-                        })
-                        .catch(() => {
-                            // Keep the last successful candidate set when the
-                            // project-scoped search is unavailable.
-                        });
-                }, 250);
+            const assigneeOptions = this.assigneeOptions(
+                this.options.assignees,
+                store,
+                draft.assigneeIds,
+            );
+            const chips = document.createElement("div");
+            chips.className = "vcp-siyuan-task-dialog__choice-chips";
+            const assigneesRef: { current?: MultiSelectFilterElement } = {};
+            const syncAssignees = (ids: number[]) => {
+                store.setAssignees(ids);
+                assigneesRef.current?.setSelected(ids);
+                this.renderChoiceChips(chips, assigneeOptions, ids, () =>
+                    syncAssignees([]),
+                );
+            };
+            const assignees = createMultiSelectFilter({
+                key: "assignee",
+                label: i18n.assigneesLabel,
+                mode: "single",
+                searchable: true,
+                searchPlaceholder: i18n.assigneeSearchPlaceholder,
+                selectedIds: draft.assigneeIds.slice(0, 1),
+                options: assigneeOptions,
+                onSearch: (query) => this.searchAssignees(store, query),
+                onChange: (ids) => syncAssignees(ids),
             });
-            assigneeControls.append(search);
-
-            const assignees = document.createElement("select");
-            assignees.name = "assignees";
-            assignees.multiple = true;
-            assignees.className = "b3-text-field";
-            assignees.size = Math.min(
-                5,
-                Math.max(2, this.options.assignees.length),
+            assigneesRef.current = assignees;
+            this.assigneeFilter = assignees;
+            const control = document.createElement("div");
+            control.className = "vcp-siyuan-task-dialog__choice-control";
+            control.append(assignees, chips);
+            this.renderChoiceChips(
+                chips,
+                assigneeOptions,
+                draft.assigneeIds.slice(0, 1),
+                () => syncAssignees([]),
             );
-            this.assigneesSelect = assignees;
-            const available = new Map(
-                this.options.assignees.map((user) => [user.id, user]),
-            );
-            for (const user of store.getAssigneeRefs())
-                available.set(user.id, user);
-            const selected = new Set(draft.assigneeIds);
-            const unavailableIds = new Set(store.getUnavailableAssigneeIds());
-            for (const user of available.values()) {
-                const option = document.createElement("option");
-                const unavailable = unavailableIds.has(user.id);
-                option.value = String(user.id);
-                option.textContent =
-                    (user.displayName || user.username) +
-                    (unavailable ? ` (${i18n.assigneeUnavailable})` : "");
-                option.selected = selected.has(user.id);
-                option.dataset.historical = String(unavailable);
-                assignees.append(option);
-            }
-            assignees.addEventListener("change", () =>
-                store.setAssignees(selectedValues(assignees)),
-            );
-            assigneeControls.append(assignees);
-            form.append(this.field(i18n.assigneesLabel, assigneeControls));
+            form.append(this.field(i18n.assigneesLabel, control));
         }
 
         const reminders = document.createElement("div");
@@ -440,10 +433,9 @@ export class TaskDialog {
             link.type = "checkbox";
             link.name = "blockLink";
             link.checked = blockLink.enabled;
-            // The entry point decides the link, not the user. Locking the control
-            // stops the Block command from silently degrading into a plain create
-            // that drops the link with no feedback.
-            link.disabled = true;
+            link.addEventListener("change", () =>
+                store.setBlockLinkEnabled(link.checked),
+            );
             blockLinkControl.append(link);
             if (blockLink.summary) {
                 const summary = document.createElement("span");
@@ -456,10 +448,6 @@ export class TaskDialog {
                 summary.textContent = `${title} · ${blockLink.summary.documentId}${count}`;
                 blockLinkControl.append(summary);
             }
-            const locked = document.createElement("span");
-            locked.className = "vcp-siyuan-task-dialog__block-note";
-            locked.textContent = i18n.blockLinkLocked;
-            blockLinkControl.append(locked);
             const linkedCount = blockLink.summary?.linkedTaskCount ?? 0;
             if (linkedCount > 0) {
                 const linked = document.createElement("span");
@@ -542,29 +530,110 @@ export class TaskDialog {
     }
 
     updateAssigneeOptions(assignees: ReadonlyArray<UserRef>): void {
-        const select = this.assigneesSelect;
-        if (!select) return;
-        const selectedIds = new Set(selectedValues(select));
         this.options.store.setAvailableAssignees([...assignees]);
-        const byId = new Map(assignees.map((user) => [user.id, user]));
-        for (const user of this.options.store.getAssigneeRefs())
-            byId.set(user.id, user);
-        const unavailableIds = new Set(
-            this.options.store.getUnavailableAssigneeIds(),
+        const options = this.assigneeOptions(
+            assignees,
+            this.options.store,
+            this.options.store.getAssigneeIds(),
         );
-        select.replaceChildren();
-        for (const user of byId.values()) {
-            const option = document.createElement("option");
-            const unavailable = unavailableIds.has(user.id);
-            option.value = String(user.id);
-            option.textContent =
+        this.assigneeFilter?.updateOptions(options);
+        this.assigneeFilter?.setSelected(this.options.store.getAssigneeIds());
+        const host = this.container?.querySelector<HTMLElement>(
+            ".vcp-siyuan-task-dialog__choice-chips",
+        );
+        if (host) {
+            this.renderChoiceChips(host, options, this.options.store.getAssigneeIds(), () => {
+                this.options.store.setAssignees([]);
+                this.assigneeFilter?.setSelected([]);
+                this.renderChoiceChips(host, options, [], () => {});
+            });
+        }
+    }
+
+    private loadProjectAssignees(
+        store: TaskDialogStore,
+        projectId: number,
+    ): void {
+        if (this.assigneeSearchTimer !== undefined)
+            clearTimeout(this.assigneeSearchTimer);
+        this.assigneeSearchTimer = undefined;
+        const generation = ++this.assigneeSearchGeneration;
+        void Promise.resolve(this.options.onProjectChange?.(projectId))
+            .then((assignees) => {
+                if (
+                    generation === this.assigneeSearchGeneration &&
+                    store.getProjectId() === projectId &&
+                    assignees
+                )
+                    this.updateAssigneeOptions(assignees);
+            })
+            .catch(() => {});
+    }
+
+    private searchAssignees(store: TaskDialogStore, query: string): void {
+        if (this.assigneeSearchTimer !== undefined)
+            clearTimeout(this.assigneeSearchTimer);
+        const projectId = store.getProjectId();
+        const generation = ++this.assigneeSearchGeneration;
+        this.assigneeSearchTimer = setTimeout(() => {
+            void Promise.resolve(
+                this.options.onAssigneeSearch?.(projectId, query),
+            )
+                .then((assignees) => {
+                    if (generation === this.assigneeSearchGeneration && assignees)
+                        this.updateAssigneeOptions(assignees);
+                })
+                .catch(() => {});
+        }, 250);
+    }
+
+    private assigneeOptions(
+        assignees: ReadonlyArray<UserRef>,
+        store: TaskDialogStore,
+        selectedIds: number[],
+    ): MultiSelectOption[] {
+        const byId = new Map(assignees.map((user) => [user.id, user]));
+        for (const user of store.getAssigneeRefs()) byId.set(user.id, user);
+        const unavailableIds = new Set(store.getUnavailableAssigneeIds());
+        return [...byId.values()].map((user) => ({
+            id: user.id,
+            label:
                 (user.displayName || user.username) +
-                (unavailable
+                (unavailableIds.has(user.id)
                     ? ` (${this.options.i18n.assigneeUnavailable})`
-                    : "");
-            option.selected = selectedIds.has(user.id);
-            option.dataset.historical = String(unavailable);
-            select.append(option);
+                    : ""),
+            disabled: unavailableIds.has(user.id) && !selectedIds.includes(user.id),
+        }));
+    }
+
+    private renderChoiceChips(
+        container: HTMLElement,
+        options: MultiSelectOption[],
+        selectedIds: number[],
+        onRemove: (id: number) => void,
+    ): void {
+        container.replaceChildren();
+        for (const id of selectedIds) {
+            const option = options.find((item) => item.id === id);
+            if (!option) continue;
+            const chip = document.createElement("span");
+            chip.className = "vcp-siyuan-task-dialog__choice-chip";
+            if (option.color) {
+                const swatch = document.createElement("span");
+                swatch.className = "vcp-siyuan-task-dialog__choice-chip-swatch";
+                swatch.style.background = option.color;
+                chip.append(swatch);
+            }
+            const text = document.createElement("span");
+            text.textContent = option.label;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "vcp-siyuan-task-dialog__choice-chip-remove";
+            remove.textContent = "×";
+            remove.setAttribute("aria-label", `Remove ${option.label}`);
+            remove.addEventListener("click", () => onRemove(id));
+            chip.append(text, remove);
+            container.append(chip);
         }
     }
 
@@ -583,6 +652,9 @@ export class TaskDialog {
             disabled.textContent = i18n.attachmentsDisabled;
             section.append(disabled);
         } else if (this.options.attachmentStore) {
+            const upload = document.createElement("label");
+            upload.className = "vcp-siyuan-task-dialog__attachment-upload";
+            upload.textContent = `☁ ${i18n.uploadAttachment}`;
             const input = document.createElement("input");
             input.type = "file";
             input.multiple = true;
@@ -594,7 +666,8 @@ export class TaskDialog {
                 input.value = "";
                 this.refreshAttachments();
             });
-            section.append(input);
+            upload.append(input);
+            section.append(upload);
             if (this.options.attachmentLimitBytes !== undefined) {
                 const limit = document.createElement("small");
                 limit.textContent = i18n.attachmentLimit(
@@ -609,6 +682,7 @@ export class TaskDialog {
                 onRetry: (id) => this.options.onAttachmentRetry?.(id),
                 onDownload: (id) => this.options.onAttachmentDownload?.(id),
                 onPreview: (id) => this.options.onAttachmentPreview?.(id),
+                loadThumbnail: (id) => this.options.onAttachmentThumbnail?.(id) ?? Promise.resolve(undefined),
                 onDelete: (id) => {
                     void Promise.resolve(
                         this.options.confirmAttachmentDelete?.(id) ?? true,
@@ -624,11 +698,13 @@ export class TaskDialog {
         form.append(section);
     }
 
-    private field(labelText: string, control: HTMLElement): HTMLLabelElement {
+    private field(labelText: string, control: HTMLElement): HTMLElement {
+        const field = document.createElement("div");
+        field.className = "vcp-siyuan-task-dialog__field";
         const label = document.createElement("label");
         label.textContent = labelText;
-        label.append(control);
-        return label;
+        field.append(label, control);
+        return field;
     }
 
     private createDateInput(
@@ -708,12 +784,6 @@ export class TaskDialog {
         wrapper.append(unit, every);
         return wrapper;
     }
-}
-
-function selectedValues(select: HTMLSelectElement): number[] {
-    return [...select.selectedOptions]
-        .map((option) => Number(option.value))
-        .filter((value) => Number.isSafeInteger(value) && value > 0);
 }
 
 function parseDateInput(value: string): string | null {

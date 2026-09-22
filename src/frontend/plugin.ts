@@ -4,7 +4,6 @@ import {
     confirm as siyuanConfirm,
     showMessage,
     openTab,
-    getAllEditor,
 } from "siyuan";
 import {
     DEFAULT_CONFIG,
@@ -21,9 +20,7 @@ import { RpcResponse, VikunjaRpcMethod } from "../shared/rpc.js";
 import { ConnectionInfo, RpcResult } from "../shared/contracts.js";
 import { registerBlockMenu } from "./context/blockMenu.js";
 import { BlockLinkRepository } from "./context/BlockLinkRepository.js";
-import { TaskLinkIndex, TaskLinkIndexEntry } from "./context/TaskLinkIndex.js";
-import { createCurrentDocumentSource } from "./context/currentDocument.js";
-import { parseBlockTaskLinks } from "../shared/block-link.js";
+import { TaskLinkIndex } from "./context/TaskLinkIndex.js";
 import {
     BlockCreateDialogRequest,
     createBlockMenuActions,
@@ -90,7 +87,6 @@ export class VCPSiyuanPlugin extends Plugin {
     private pendingOperations?: PendingOperationStore;
     private capabilities?: ConnectionInfo;
     private settingsDescriptor?: SettingsDescriptor;
-    private managementStore?: ManagementStore;
     private disposeBlockMenu?: () => void;
     private initialized = false;
     private destroyed = false;
@@ -103,12 +99,7 @@ export class VCPSiyuanPlugin extends Plugin {
     private linkedTaskAttachments?: AttachmentStore;
     private linkedTaskUnsubscribe?: () => void;
     private linkedTaskDetailUnsubscribe?: () => void;
-    private managementModal?: { host: HTMLElement; dispose: () => void };
-    private managementDialog?: ProjectManagerDialog | LabelManagerDialog;
-    private currentDocumentSource?: ReturnType<
-        typeof createCurrentDocumentSource
-    >;
-    private onSwitchProtyle?: (event: unknown) => void;
+    private resourceUnsubscribe?: () => void;
 
     onload(): void {
         if (this.initialized) return;
@@ -151,10 +142,8 @@ export class VCPSiyuanPlugin extends Plugin {
             summaryCache,
         });
         this.taskListStore = taskListStore;
-        this.currentDocumentSource = createCurrentDocumentSource(() =>
-            getAllEditor().map((editor) => ({
-                block: editor.protyle?.block,
-            })),
+        this.resourceUnsubscribe = this.resourceStore.subscribe(() =>
+            this.dockInstance?.invalidate(),
         );
         this.dockInstance = new VikunjaDock({
             openSettings: () => {
@@ -165,12 +154,15 @@ export class VCPSiyuanPlugin extends Plugin {
                 void this.openLinkedTask(taskId);
             },
             onCreateTask: () => this.openCreateTaskDialog(),
-            onManageProjects: () => void this.openProjectManager(),
-            onManageLabels: () => void this.openLabelManager(),
-            onCurrentDocumentFilterChange: (enabled) =>
-                this.handleCurrentDocumentFilter(enabled),
-            onAssignedToMeFilterChange: (enabled) =>
-                this.handleAssignedToMeFilter(enabled),
+            getProjects: () => this.resourceStore?.getProjects() ?? [],
+            getLabels: () => this.resourceStore?.getLabels() ?? [],
+            projectPath: (projectId) =>
+                this.resourceStore?.getProjectPath(projectId) ?? "",
+            resourceStatus: () => this.resourceStore?.getState().status ?? "idle",
+            resourceError: () => this.resourceStore?.getState().error,
+            retryResources: () => this.resourceStore?.refresh(),
+            renderResourceManagement: (container) =>
+                this.renderResourceManagement(container),
             i18n: {
                 dockTitle: this.i18n.dockTitle,
                 refresh: this.i18n.refresh,
@@ -179,27 +171,27 @@ export class VCPSiyuanPlugin extends Plugin {
                 empty: this.i18n.empty,
                 unconfigured: this.i18n.unconfigured,
                 projectPrefix: this.i18n.projectPrefix,
-                focus: this.i18n.focus,
                 inbox: this.i18n.inbox,
-                planned: this.i18n.planned,
+                allTasks: this.i18n.allTasks,
+                projectsAndLabels: this.i18n.projectsAndLabels,
+                incomplete: this.i18n.incomplete,
+                projects: this.i18n.projects,
+                labels: this.i18n.labels,
+                inboxNotConfigured: this.i18n.inboxNotConfigured,
                 offline: this.i18n.offline,
                 loadError: this.i18n.loadError,
                 newTask: this.i18n.newTask,
-                manageProjects: this.i18n.manageProjects,
-                manageLabels: this.i18n.manageLabels,
                 loadMore: this.i18n.loadMore,
                 refreshing: this.i18n.refreshing,
                 connectionOnline: this.i18n.connectionOnline,
                 connectionOffline: this.i18n.connectionOffline,
-                currentDocument: this.i18n.currentDocument,
-                assignedToMe: this.i18n.assignedToMe,
-                groupLabel: (key) =>
-                    this.i18n[`group${key[0].toUpperCase()}${key.slice(1)}`],
+                resourcesLoading: this.i18n.resourcesLoading,
+                resourcesError: this.i18n.resourcesError,
+                retry: this.i18n.retry,
                 shownCount: (shown, total) =>
                     this.i18n.shownCount
                         .replace("{shown}", String(shown))
                         .replace("{total}", String(total)),
-                serverFiltered: this.i18n.serverFiltered,
                 timeZoneLabel: (timeZone) =>
                     this.i18n.timeZoneLabel.replace("{value}", timeZone),
                 snapshotAt: (value) =>
@@ -308,13 +300,6 @@ export class VCPSiyuanPlugin extends Plugin {
             },
         );
 
-        this.onSwitchProtyle = () => {
-            if (this.taskListStore?.getFilterState().currentDocument) {
-                void this.syncCurrentDocumentFilter();
-            }
-        };
-        this.eventBus.on("switch-protyle", this.onSwitchProtyle as never);
-
         this.settingsDescriptor = createSettings({
             initialConfig: this.config,
             onSave: (newConfig: PluginConfig) => {
@@ -332,6 +317,9 @@ export class VCPSiyuanPlugin extends Plugin {
                 );
                 this.dockInstance.invalidate();
                 this.dockInstance.refresh().catch(() => {});
+                if ((this.config.vikunjaOrigin ?? "").trim()) {
+                    this.resourceStore?.refresh().catch(() => {});
+                }
             },
             onTestConnection: async (draft: PluginConfig) => {
                 const tempController = new VikunjaController({
@@ -408,74 +396,6 @@ export class VCPSiyuanPlugin extends Plugin {
         }
     }
 
-    private async handleCurrentDocumentFilter(enabled: boolean): Promise<void> {
-        if (!this.taskListStore) return;
-        if (!enabled) {
-            this.taskListStore.setCurrentDocumentTaskIds(new Set());
-            return;
-        }
-        await this.syncCurrentDocumentFilter();
-    }
-
-    private async handleAssignedToMeFilter(enabled: boolean): Promise<void> {
-        if (!enabled || !this.taskListStore) return;
-        const result = await this.controller.call("vikunja.users.current", {});
-        if (!result.ok) {
-            this.taskListStore.setAssignedToMe(false);
-            return;
-        }
-        this.taskListStore.setAssignedToMe(true, result.data.id);
-    }
-
-    private async syncCurrentDocumentFilter(): Promise<void> {
-        if (
-            !this.taskListStore ||
-            !this.currentDocumentSource ||
-            !this.linkIndex ||
-            !this.contextController
-        )
-            return;
-        const documentId = this.currentDocumentSource.getCurrentDocumentId();
-        this.taskListStore.setCurrentDocumentTaskIds(new Set());
-        if (!documentId) return;
-        try {
-            const taskIds = await this.linkIndex.taskIdsForDocumentOrScan(
-                documentId,
-                async () => {
-                    const blocks =
-                        await this.contextController!.listDocumentBlocks(
-                            documentId,
-                        );
-                    const entries: TaskLinkIndexEntry[] = [];
-                    for (const block of blocks) {
-                        const attrs =
-                            await this.contextController!.getBlockAttrs(
-                                block.blockId,
-                            );
-                        const taskIds = parseBlockTaskLinks(
-                            attrs["custom-vikunja-task-links"],
-                        ).taskIds;
-                        for (const taskId of taskIds) {
-                            entries.push({
-                                taskId,
-                                blockId: block.blockId,
-                                documentId: block.documentId,
-                                ...(block.notebookId
-                                    ? { notebookId: block.notebookId }
-                                    : {}),
-                                updatedAt: block.updatedAt ?? Date.now(),
-                            });
-                        }
-                    }
-                    return entries;
-                },
-            );
-            this.taskListStore.setCurrentDocumentTaskIds(taskIds);
-        } catch {
-            this.taskListStore.setCurrentDocumentTaskIds(new Set());
-        }
-    }
-
     async onLayoutReady(): Promise<void> {
         try {
             const loaded = await this.loadData(STORAGE_NAME);
@@ -485,6 +405,9 @@ export class VCPSiyuanPlugin extends Plugin {
                 this.config.inboxProjectId ?? null,
             );
             this.settingsDescriptor?.updateConfig(this.config);
+            if ((this.config.vikunjaOrigin ?? "").trim()) {
+                await this.resourceStore?.refresh().catch(() => {});
+            }
         } catch (error) {
             console.error(`[${this.name}] failed to load config`, error);
         }
@@ -667,6 +590,12 @@ export class VCPSiyuanPlugin extends Plugin {
                     createdTaskId ?? 0,
                     itemId,
                 ),
+            onAttachmentThumbnail: (itemId) =>
+                this.loadAttachmentThumbnail(
+                    attachmentStore,
+                    createdTaskId ?? 0,
+                    itemId,
+                ),
             onProjectChange: (projectId) =>
                 this.resourceStore?.searchMembers(projectId, ""),
             onAssigneeSearch: (projectId, query) =>
@@ -679,9 +608,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 const store = this.taskListStore;
                 if (store) {
                     void Promise.all([
-                        store.refresh("focus"),
                         store.refresh("inbox"),
-                        store.refresh("planned"),
+                        store.refresh("all"),
                     ]);
                 }
                 attachmentSubscription();
@@ -787,6 +715,12 @@ export class VCPSiyuanPlugin extends Plugin {
                     taskId,
                     itemId,
                 ),
+            onAttachmentThumbnail: (itemId) =>
+                this.loadAttachmentThumbnail(
+                    this.linkedTaskAttachments,
+                    taskId,
+                    itemId,
+                ),
             onAttachmentDelete: (itemId) =>
                 void this.deleteAttachment(taskId, itemId),
             onBlockOpen: (blockId) =>
@@ -879,6 +813,21 @@ export class VCPSiyuanPlugin extends Plugin {
         link.download = download.fileName.replace(/[\\\\/]/g, "_");
         link.click();
         URL.revokeObjectURL(url);
+    }
+
+    private async loadAttachmentThumbnail(
+        store: AttachmentStore | undefined,
+        taskId: number,
+        itemId: string,
+    ): Promise<Blob | undefined> {
+        const item = store?.getItems().find((value) => value.id === itemId);
+        if (!store || !item) return undefined;
+        if (item.file) return item.file;
+        const download = await store.download(taskId, itemId, "sm");
+        if (!download) return undefined;
+        return new Blob([new Uint8Array(toBytes(download.bytes))], {
+            type: download.mimeType,
+        });
     }
 
     /**
@@ -974,61 +923,35 @@ export class VCPSiyuanPlugin extends Plugin {
         );
     }
 
-    private async openProjectManager(): Promise<void> {
-        if (!this.resourceStore) return;
-        try {
-            await this.resourceStore.refresh();
-        } catch {
-            showMessage(this.i18n.loadError);
-            return;
-        }
-        this.managementStore = new ManagementStore({
-            deleteResource: (kind, id, expectedTitle) =>
-                kind === "project"
-                    ? this.controller.call("vikunja.projects.delete", {
-                          projectId: id,
-                          expectedTitle: expectedTitle ?? "",
-                      })
-                    : this.controller.call("vikunja.labels.delete", {
-                          labelId: id,
-                          expectedTitle: expectedTitle ?? "",
-                      }),
+    private renderResourceManagement(container: HTMLElement): () => void {
+        if (!this.resourceStore) return () => {};
+        const projectHost = document.createElement("div");
+        projectHost.className = "vcp-siyuan-dock__resource-section";
+        const labelHost = document.createElement("div");
+        labelHost.className = "vcp-siyuan-dock__resource-section";
+        container.append(projectHost, labelHost);
+
+        const projectManagementStore = new ManagementStore({
+            deleteResource: (_kind, id, expectedTitle) =>
+                this.controller.call("vikunja.projects.delete", {
+                    projectId: id,
+                    expectedTitle: expectedTitle ?? "",
+                }),
         });
-        const dialog = new ProjectManagerDialog({
+        const labelManagementStore = new ManagementStore({
+            deleteResource: (_kind, id, expectedTitle) =>
+                this.controller.call("vikunja.labels.delete", {
+                    labelId: id,
+                    expectedTitle: expectedTitle ?? "",
+                }),
+        });
+
+        const projectDialog = new ProjectManagerDialog({
+            embedded: true,
             projects: this.resourceStore.getProjects(),
-            // The delete-impact summary is fetched on demand: preloading it for
-            // the first project rendered a confirmation nobody asked for.
-            i18n: {
-                title: this.i18n.projectManagerTitle,
-                impact: (open, completed, descendants) =>
-                    this.i18n.projectImpact
-                        .replace("{open}", String(open))
-                        .replace("{completed}", String(completed))
-                        .replace("{descendants}", String(descendants)),
-                impactIncomplete: this.i18n.impactIncomplete,
-                confirmLabel: this.i18n.confirmProjectTitle,
-                delete: this.i18n.delete,
-                cancel: this.i18n.cancel,
-                close: this.i18n.close,
-                save: this.i18n.save,
-                search: this.i18n.projectSearchPlaceholder,
-                create: this.i18n.projectCreate,
-                edit: this.i18n.projectEdit,
-                empty: this.i18n.projectEmpty,
-                noMatches: this.i18n.noMatches,
-                titleLabel: this.i18n.projectTitleLabel,
-                descriptionLabel: this.i18n.projectDescriptionLabel,
-                colorLabel: this.i18n.projectColorLabel,
-                parentLabel: this.i18n.projectParentLabel,
-                archivedLabel: this.i18n.projectArchivedLabel,
-                projectPath: (path) => path,
-            },
+            i18n: this.projectManagerI18n(),
             onCreate: async (draft) => {
                 await this.resourceStore?.createProject(draft);
-                await this.resourceStore?.refresh();
-                dialog.destroy();
-                this.managementModal?.dispose();
-                this.dockInstance.invalidate();
             },
             onEdit: async (projectId, draft) => {
                 await this.resourceStore?.patchProject(projectId, {
@@ -1037,98 +960,32 @@ export class VCPSiyuanPlugin extends Plugin {
                     color: draft.color,
                     parentProjectId: draft.parentProjectId,
                 });
-                dialog.destroy();
-                this.managementModal?.dispose();
-                this.dockInstance.invalidate();
             },
             onPreviewDelete: async (projectId) => {
                 const preview = await this.controller.call(
                     "vikunja.projects.deleteImpact",
-                    {
-                        projectId,
-                        inboxProjectId: this.config.inboxProjectId,
-                    },
+                    { projectId, inboxProjectId: this.config.inboxProjectId },
                 );
                 if (!preview.ok) {
                     showMessage(preview.error.message || this.i18n.loadError);
                     return;
                 }
-                this.managementStore?.setImpact(preview.data);
-                dialog.setImpact(preview.data);
+                projectManagementStore.setImpact(preview.data);
+                projectDialog.setImpact(preview.data);
             },
             onDelete: async (title) => {
-                const target = this.managementStore?.getState().impact?.project;
+                const target = projectManagementStore.getState().impact?.project;
                 if (!target) return;
-                const store = this.managementStore;
-                if (!store) return;
-                const result = await store.deleteProject(target.id, title);
-                if (result.ok) {
-                    dialog.destroy();
-                    this.managementModal?.dispose();
-                    await this.resourceStore?.refresh();
-                    this.dockInstance.invalidate();
-                }
-            },
-            onClose: () => {
-                dialog.destroy();
-                this.managementModal?.dispose();
+                const result = await projectManagementStore.deleteProject(target.id, title);
+                if (result.ok) await this.resourceStore?.refresh();
             },
         });
-        const modal = createModalHost(() => {
-            dialog.destroy();
-            modal.dispose();
-        }, "vcp-siyuan-management-dialog");
-        this.managementModal = modal;
-        this.managementDialog = dialog;
-        dialog.mount(modal.host);
-    }
-
-    private async openLabelManager(): Promise<void> {
-        if (!this.resourceStore) return;
-        try {
-            await this.resourceStore.refresh();
-        } catch {
-            showMessage(this.i18n.loadError);
-            return;
-        }
-        this.managementStore = new ManagementStore({
-            deleteResource: (kind, id, expectedTitle) =>
-                kind === "label"
-                    ? this.controller.call("vikunja.labels.delete", {
-                          labelId: id,
-                          expectedTitle: expectedTitle ?? "",
-                      })
-                    : this.controller.call("vikunja.projects.delete", {
-                          projectId: id,
-                          expectedTitle: expectedTitle ?? "",
-                      }),
-        });
-        const dialog = new LabelManagerDialog({
+        const labelDialog = new LabelManagerDialog({
+            embedded: true,
             labels: this.resourceStore.getLabels(),
-            i18n: {
-                title: this.i18n.labelManagerTitle,
-                usage: (count) =>
-                    this.i18n.labelUsage.replace("{count}", String(count)),
-                impactIncomplete: this.i18n.impactIncomplete,
-                confirmPlaceholder: this.i18n.confirmTitle,
-                delete: this.i18n.delete,
-                cancel: this.i18n.cancel,
-                close: this.i18n.close,
-                save: this.i18n.save,
-                search: this.i18n.labelSearchPlaceholder,
-                create: this.i18n.labelCreate,
-                edit: this.i18n.labelEdit,
-                empty: this.i18n.labelEmpty,
-                noMatches: this.i18n.noMatches,
-                titleLabel: this.i18n.labelTitleLabel,
-                descriptionLabel: this.i18n.labelDescriptionLabel,
-                colorLabel: this.i18n.labelColorLabel,
-            },
+            i18n: this.labelManagerI18n(),
             onCreate: async (draft) => {
                 await this.resourceStore?.createLabel(draft);
-                dialog.destroy();
-                this.managementModal?.dispose();
-                this.dockInstance.invalidate();
             },
             onEdit: async (labelId, draft) => {
                 await this.resourceStore?.patchLabel(labelId, {
@@ -1136,9 +993,6 @@ export class VCPSiyuanPlugin extends Plugin {
                     descriptionMarkdown: draft.descriptionMarkdown,
                     color: draft.color,
                 });
-                dialog.destroy();
-                this.managementModal?.dispose();
-                this.dockInstance.invalidate();
             },
             onPreviewDelete: async (labelId) => {
                 const preview = await this.controller.call(
@@ -1149,35 +1003,71 @@ export class VCPSiyuanPlugin extends Plugin {
                     showMessage(preview.error.message || this.i18n.loadError);
                     return;
                 }
-                this.managementStore?.setLabelImpact(preview.data);
-                dialog.setImpact(preview.data);
+                labelManagementStore.setLabelImpact(preview.data);
+                labelDialog.setImpact(preview.data);
             },
             onDelete: async (title) => {
-                const target =
-                    this.managementStore?.getState().labelImpact?.label;
+                const target = labelManagementStore.getState().labelImpact?.label;
                 if (!target) return;
-                const store = this.managementStore;
-                if (!store) return;
-                const result = await store.deleteLabel(target.id, title);
-                if (result.ok) {
-                    dialog.destroy();
-                    this.managementModal?.dispose();
-                    await this.resourceStore?.refresh();
-                    this.dockInstance.invalidate();
-                }
-            },
-            onClose: () => {
-                dialog.destroy();
-                this.managementModal?.dispose();
+                const result = await labelManagementStore.deleteLabel(target.id, title);
+                if (result.ok) await this.resourceStore?.refresh();
             },
         });
-        const modal = createModalHost(() => {
-            dialog.destroy();
-            modal.dispose();
-        }, "vcp-siyuan-management-dialog");
-        this.managementModal = modal;
-        this.managementDialog = dialog;
-        dialog.mount(modal.host);
+        projectDialog.mount(projectHost);
+        labelDialog.mount(labelHost);
+        return () => {
+            projectDialog.destroy();
+            labelDialog.destroy();
+        };
+    }
+
+    private projectManagerI18n(): ConstructorParameters<typeof ProjectManagerDialog>[0]["i18n"] {
+        return {
+            title: this.i18n.projectManagerTitle,
+            impact: (open, completed, descendants) =>
+                this.i18n.projectImpact
+                    .replace("{open}", String(open))
+                    .replace("{completed}", String(completed))
+                    .replace("{descendants}", String(descendants)),
+            impactIncomplete: this.i18n.impactIncomplete,
+            confirmLabel: this.i18n.confirmProjectTitle,
+            delete: this.i18n.delete,
+            cancel: this.i18n.cancel,
+            close: this.i18n.close,
+            save: this.i18n.save,
+            search: this.i18n.projectSearchPlaceholder,
+            create: this.i18n.projectCreate,
+            edit: this.i18n.projectEdit,
+            empty: this.i18n.projectEmpty,
+            noMatches: this.i18n.noMatches,
+            titleLabel: this.i18n.projectTitleLabel,
+            descriptionLabel: this.i18n.projectDescriptionLabel,
+            colorLabel: this.i18n.projectColorLabel,
+            parentLabel: this.i18n.projectParentLabel,
+            archivedLabel: this.i18n.projectArchivedLabel,
+            projectPath: (path) => path,
+        };
+    }
+
+    private labelManagerI18n(): ConstructorParameters<typeof LabelManagerDialog>[0]["i18n"] {
+        return {
+            title: this.i18n.labelManagerTitle,
+            usage: (count) => this.i18n.labelUsage.replace("{count}", String(count)),
+            impactIncomplete: this.i18n.impactIncomplete,
+            confirmPlaceholder: this.i18n.confirmTitle,
+            delete: this.i18n.delete,
+            cancel: this.i18n.cancel,
+            close: this.i18n.close,
+            save: this.i18n.save,
+            search: this.i18n.labelSearchPlaceholder,
+            create: this.i18n.labelCreate,
+            edit: this.i18n.labelEdit,
+            empty: this.i18n.labelEmpty,
+            noMatches: this.i18n.noMatches,
+            titleLabel: this.i18n.labelTitleLabel,
+            descriptionLabel: this.i18n.labelDescriptionLabel,
+            colorLabel: this.i18n.labelColorLabel,
+        };
     }
 
     private async openEditTask(detail: TaskDetail): Promise<void> {
@@ -1228,6 +1118,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 ),
             onAttachmentPreview: (itemId) =>
                 void this.previewAttachment(attachmentStore, detail.id, itemId),
+            onAttachmentThumbnail: (itemId) =>
+                this.loadAttachmentThumbnail(attachmentStore, detail.id, itemId),
             onAttachmentDelete: (itemId) =>
                 void attachmentStore.deleteRemote(detail.id, itemId),
             confirmAttachmentDelete: () =>
@@ -1488,22 +1380,14 @@ export class VCPSiyuanPlugin extends Plugin {
         if (this.destroyed) return;
         this.destroyed = true;
         this.disposeBlockMenu?.();
-        if (this.onSwitchProtyle) {
-            this.eventBus.off("switch-protyle", this.onSwitchProtyle as never);
-            this.onSwitchProtyle = undefined;
-        }
-        this.disposeBlockMenu = undefined;
         this.dockInstance?.destroy();
         this.closeLinkedTask();
         this.taskListStore?.destroy();
         this.taskListStore = undefined;
-        this.managementDialog?.destroy();
-        this.managementDialog = undefined;
-        this.managementModal?.dispose();
-        this.managementModal = undefined;
+        this.resourceUnsubscribe?.();
+        this.resourceUnsubscribe = undefined;
         this.resourceStore = undefined;
         this.pendingOperations = undefined;
-        this.currentDocumentSource = undefined;
         this.blockLinks = undefined;
         this.linkIndex = undefined;
         this.contextController = undefined;

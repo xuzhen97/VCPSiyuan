@@ -31,6 +31,7 @@ function storeWith(
         controller: { call } as never,
         origin,
         timeZone: "UTC",
+        inboxProjectId: 1,
     });
 }
 
@@ -56,15 +57,18 @@ describe("VikunjaDock", () => {
         expect(call).toHaveBeenCalledWith(
             "vikunja.tasks.query",
             expect.objectContaining({
-                view: "focus",
+                view: "inbox",
                 page: 1,
                 perPage: 50,
                 timeZone: "UTC",
+                doneFilter: "open",
+                projectIds: [],
+                labelIds: [],
             }),
         );
-        expect(element.textContent).toContain(dockI18n.focus);
         expect(element.textContent).toContain(dockI18n.inbox);
-        expect(element.textContent).toContain(dockI18n.planned);
+        expect(element.textContent).toContain(dockI18n.allTasks);
+        expect(element.textContent).toContain(dockI18n.projectsAndLabels);
         expect(element.textContent).toContain(`${dockI18n.projectPrefix}3`);
         expect(
             element
@@ -227,42 +231,24 @@ describe("VikunjaDock", () => {
         ).toBeNull();
     });
 
-    it("opens projects and labels as two separate pages", async () => {
+    it("renders the resources tab", async () => {
         const call = vi.fn().mockResolvedValue({
             ok: true,
             data: { items: [], total: 0, page: 1, perPage: 50 },
         });
-        const onManageProjects = vi.fn();
-        const onManageLabels = vi.fn();
         const dock = new VikunjaDock({
             store: storeWith(call),
             openSettings: vi.fn(),
             i18n: dockI18n,
-            onManageProjects,
-            onManageLabels,
+            renderResourceManagement: (container) => {
+                container.textContent = "resource management";
+            },
         });
         const element = document.createElement("div");
         dock.mount(element);
 
-        const find = (action: string) =>
-            element.querySelector<HTMLButtonElement>(
-                `button[data-action='${action}']`,
-            );
-        expect(find("manage-projects")?.textContent).toBe(
-            dockI18n.manageProjects,
-        );
-        expect(find("manage-labels")?.textContent).toBe(dockI18n.manageLabels);
-
-        // Both entries are write-gated, so they only accept clicks once the
-        // first load settles. The dock rebuilds its DOM on every store change,
-        // so the buttons must be re-queried rather than captured up front.
-        await vi.waitFor(() => {
-            expect(find("manage-projects")?.disabled).toBe(false);
-        });
-        find("manage-projects")?.click();
-        find("manage-labels")?.click();
-        expect(onManageProjects).toHaveBeenCalledTimes(1);
-        expect(onManageLabels).toHaveBeenCalledTimes(1);
+        element.querySelector<HTMLButtonElement>("[data-view='resources']")?.click();
+        expect(element.textContent).toContain("resource management");
     });
 
     it("stops updating the DOM after destroy", async () => {

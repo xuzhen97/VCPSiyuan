@@ -33,10 +33,7 @@ export class TaskGateway {
             filter_timezone: query.timeZone,
             // Vikunja requires repeated parameters here; "a,b" is rejected with
             // HTTP 400 by the v2 task collection endpoint.
-            sort_by:
-                query.view === "focus"
-                    ? ["priority", "updated"]
-                    : ["due_date", "priority"],
+            sort_by: ["due_date", "priority"],
             order_by: ["desc", "desc"],
             filter: buildTaskFilter(query) || undefined,
             format: "markdown",
@@ -221,24 +218,19 @@ export class TaskGateway {
 }
 
 function buildTaskFilter(query: TaskQuery): string {
-    const doneFilter = query.doneFilter ?? "open";
-    const doneClause =
-        doneFilter === "done"
-            ? "done = true"
-            : doneFilter === "all"
-              ? ""
-              : "done = false";
-    const plannedClause =
-        query.view === "planned" && doneFilter !== "all"
-            ? "due_date > now"
-            : "";
-    return (
-        [doneClause, plannedClause, query.filter?.trim() ?? ""]
-            .filter(Boolean)
-            // Vikunja's filter grammar separates conditions with `&&`; the word
-            // `AND` is parsed as part of the value and rejected with HTTP 400.
-            .join(" && ")
-    );
+    const uniqueIds = (values: number[]) =>
+        [...new Set(values)].sort((a, b) => a - b).join(",");
+    return [
+        query.doneFilter === "open" ? "done = false" : "",
+        query.projectIds.length
+            ? `project_id in ${uniqueIds(query.projectIds)}`
+            : "",
+        query.labelIds.length ? `labels in ${uniqueIds(query.labelIds)}` : "",
+    ]
+        .filter(Boolean)
+        // Vikunja's filter grammar separates conditions with `&&`; the word
+        // `AND` is parsed as part of the value and rejected with HTTP 400.
+        .join(" && ");
 }
 
 function draftToWire(draft: TaskDraft): Record<string, unknown> {

@@ -1,15 +1,14 @@
+import { Label } from "../../shared/label.js";
+import { Project } from "../../shared/project.js";
 import { TaskListStore, TaskView } from "../stores/TaskListStore.js";
+import {
+    createMultiSelectFilter,
+    MultiSelectFilterElement,
+    MultiSelectOption,
+} from "./MultiSelectFilter.js";
 import { TaskRowI18n, createTaskRow } from "./TaskRow.js";
 
-export type DockGroupKey =
-    | "overdue"
-    | "today"
-    | "next"
-    | "tomorrow"
-    | "thisWeek"
-    | "nextWeek"
-    | "later"
-    | "all";
+export type DockView = TaskView | "resources";
 
 export interface VikunjaDockI18n extends TaskRowI18n {
     dockTitle: string;
@@ -19,75 +18,81 @@ export interface VikunjaDockI18n extends TaskRowI18n {
     refreshing: string;
     empty: string;
     unconfigured: string;
+    inboxNotConfigured: string;
     offline: string;
     loadError: string;
-    focus: string;
     inbox: string;
-    planned: string;
+    allTasks: string;
+    projectsAndLabels: string;
+    incomplete: string;
+    projects: string;
+    labels: string;
     newTask: string;
-    manageProjects: string;
-    manageLabels: string;
     loadMore: string;
     connectionOnline: string;
     connectionOffline: string;
-    currentDocument: string;
-    assignedToMe: string;
-    groupLabel: (key: DockGroupKey) => string;
     shownCount: (shown: number, total: number) => string;
-    serverFiltered: string;
     timeZoneLabel: (timeZone: string) => string;
     snapshotAt: (value: string) => string;
+    resourcesLoading: string;
+    resourcesError: string;
+    retry: string;
 }
 
 export interface VikunjaDockOptions {
     store: TaskListStore;
     openSettings: () => void;
     i18n: VikunjaDockI18n;
-    /** Opens the task detail; without it rows are not interactive. */
     onOpenTask?: (taskId: number) => void;
-    /** Starts task creation; without it the create button is hidden. */
     onCreateTask?: () => void;
-    /** Opens project management. */
-    onManageProjects?: () => void;
-    /** Opens label management; the two are separate pages on purpose. */
-    onManageLabels?: () => void;
-    onCurrentDocumentFilterChange?: (enabled: boolean) => void | Promise<void>;
-    onAssignedToMeFilterChange?: (enabled: boolean) => void | Promise<void>;
+    getProjects?: () => Project[];
+    getLabels?: () => Label[];
+    projectPath?: (projectId: number) => string;
+    resourceStatus?: () => "idle" | "loading" | "ready" | "error";
+    resourceError?: () => string | undefined;
+    retryResources?: () => void | Promise<void>;
+    renderResourceManagement?: (container: HTMLElement) => (() => void) | void;
     now?: () => Date;
 }
 
-const views: TaskView[] = ["focus", "inbox", "planned"];
+const views: DockView[] = ["inbox", "all", "resources"];
 
 export class VikunjaDock {
     private readonly store: TaskListStore;
     private readonly openSettingsCb: () => void;
     private readonly onOpenTask?: (taskId: number) => void;
     private readonly onCreateTask?: () => void;
-    private readonly onManageProjects?: () => void;
-    private readonly onManageLabels?: () => void;
-    private readonly onCurrentDocumentFilterChange?: (
-        enabled: boolean,
-    ) => void | Promise<void>;
-    private readonly onAssignedToMeFilterChange?: (
-        enabled: boolean,
-    ) => void | Promise<void>;
+    private readonly getProjects: () => Project[];
+    private readonly getLabels: () => Label[];
+    private readonly projectPath: (projectId: number) => string;
+    private readonly resourceStatus: () => "idle" | "loading" | "ready" | "error";
+    private readonly resourceError: () => string | undefined;
+    private readonly retryResources?: () => void | Promise<void>;
+    private readonly renderResourceManagement?: (
+        container: HTMLElement,
+    ) => (() => void) | void;
     private readonly now: () => Date;
     private readonly i18n: VikunjaDockI18n;
     private readonly unsubscribeStore: () => void;
     private container?: HTMLElement;
     private destroyed = false;
-    private activeView: TaskView = "focus";
+    private activeView: DockView = "inbox";
+    private multiSelects: MultiSelectFilterElement[] = [];
+    private resourceDisposer?: () => void;
+    private resourcesLoaded = false;
 
     constructor(options: VikunjaDockOptions) {
         this.store = options.store;
         this.openSettingsCb = options.openSettings;
         this.onOpenTask = options.onOpenTask;
         this.onCreateTask = options.onCreateTask;
-        this.onManageProjects = options.onManageProjects;
-        this.onManageLabels = options.onManageLabels;
-        this.onCurrentDocumentFilterChange =
-            options.onCurrentDocumentFilterChange;
-        this.onAssignedToMeFilterChange = options.onAssignedToMeFilterChange;
+        this.getProjects = options.getProjects ?? (() => []);
+        this.getLabels = options.getLabels ?? (() => []);
+        this.projectPath = options.projectPath ?? ((id) => String(id));
+        this.resourceStatus = options.resourceStatus ?? (() => "ready");
+        this.resourceError = options.resourceError ?? (() => undefined);
+        this.retryResources = options.retryResources;
+        this.renderResourceManagement = options.renderResourceManagement;
         this.now = options.now ?? (() => new Date());
         this.i18n = options.i18n;
         this.unsubscribeStore = this.store.subscribe(() => this.render());
@@ -105,6 +110,7 @@ export class VikunjaDock {
 
     destroy(): void {
         this.destroyed = true;
+        this.disposeDynamicContent();
         this.unsubscribeStore();
         this.store.destroy();
         this.container?.replaceChildren();
@@ -112,21 +118,22 @@ export class VikunjaDock {
     }
 
     async refresh(): Promise<void> {
-        if (this.destroyed) return;
-        if (this.store.needsConfiguration()) {
-            this.render();
-            return;
-        }
+        if (this.destroyed || this.activeView === "resources") return;
         await this.store.refresh(this.activeView);
     }
 
     private render(): void {
         if (!this.container || this.destroyed) return;
+        this.disposeDynamicContent();
         this.container.replaceChildren();
         const root = document.createElement("div");
         root.className = "vcp-siyuan-dock";
+        root.append(this.renderHeader());
+        this.renderWorkbench(root);
+        this.container.append(root);
+    }
 
-        const state = this.store.getState(this.activeView);
+    private renderHeader(): HTMLElement {
         const header = document.createElement("header");
         header.className = "vcp-siyuan-dock__header";
         const title = document.createElement("div");
@@ -134,35 +141,35 @@ export class VikunjaDock {
         title.textContent = this.i18n.dockTitle;
         const connection = document.createElement("div");
         connection.className = "vcp-siyuan-dock__connection";
-        const connectionDot = document.createElement("span");
-        connectionDot.className = "vcp-siyuan-dock__connection-dot";
-        connectionDot.setAttribute("aria-hidden", "true");
-        const connectionLabel = document.createElement("span");
-        connectionLabel.textContent = this.connectionLabel(state.status);
-        connection.append(connectionDot, connectionLabel);
-
+        const dot = document.createElement("span");
+        dot.className = "vcp-siyuan-dock__connection-dot";
+        dot.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        const state = this.activeView === "resources"
+            ? this.resourceStatus()
+            : this.store.getState(this.activeView).status;
+        label.textContent = state === "offline" || state === "error"
+            ? this.i18n.connectionOffline
+            : this.i18n.connectionOnline;
+        connection.append(dot, label);
         const actions = document.createElement("div");
         actions.className = "vcp-siyuan-dock__actions";
         const refresh = document.createElement("button");
         refresh.type = "button";
         refresh.className = "b3-button b3-button--text";
-        refresh.dataset.action = "refresh";
         refresh.textContent = this.i18n.refresh;
         refresh.addEventListener("click", () => {
-            void this.refresh().catch(() => {});
+            if (this.activeView === "resources") void this.retryResources?.();
+            else void this.refresh();
         });
         const settings = document.createElement("button");
         settings.type = "button";
         settings.className = "b3-button b3-button--text";
-        settings.dataset.action = "settings";
         settings.textContent = this.i18n.openSettings;
         settings.addEventListener("click", () => this.openSettingsCb());
         actions.append(refresh, settings);
         header.append(title, connection, actions);
-        root.append(header);
-
-        this.renderWorkbench(root);
-        this.container.append(root);
+        return header;
     }
 
     private renderWorkbench(root: HTMLElement): void {
@@ -175,258 +182,230 @@ export class VikunjaDock {
             button.className = "b3-button b3-button--text";
             button.dataset.view = view;
             button.textContent = this.viewLabel(view);
-            button.setAttribute(
-                "aria-selected",
-                String(view === this.activeView),
-            );
+            button.setAttribute("aria-selected", String(view === this.activeView));
             button.addEventListener("click", () => {
                 this.activeView = view;
-                void this.store.activate(view).catch(() => {});
+                if (view !== "resources") void this.store.activate(view);
+                else if (!this.resourcesLoaded) {
+                    this.resourcesLoaded = true;
+                    void this.retryResources?.();
+                }
                 this.render();
             });
             tabs.append(button);
         }
         root.append(tabs);
+        if (this.activeView === "resources") {
+            this.renderResources(root);
+            return;
+        }
+        root.append(this.renderFilters());
+        root.append(this.renderTaskContent());
+        root.append(this.createFooter());
+    }
 
+    private renderFilters(): HTMLElement {
         const filters = document.createElement("div");
         filters.className = "vcp-siyuan-dock__filters";
-        filters.append(
-            this.createFilterButton(
-                "current-document",
-                this.i18n.currentDocument,
-                this.store.getFilterState().currentDocument,
-            ),
-            this.createFilterButton(
-                "assigned-to-me",
-                this.i18n.assignedToMe,
-                this.store.getFilterState().assignedToMe,
-            ),
-        );
+        const view = this.activeView as TaskView;
+        const state = this.store.getState(view);
+        const filterState = this.store.getFilters(view);
+        const disabled = this.isWriteDisabled();
+        const incomplete = document.createElement("label");
+        incomplete.className = "vcp-siyuan-dock__check-filter";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = filterState.incompleteOnly;
+        checkbox.disabled = disabled;
+        checkbox.dataset.filter = "incomplete";
+        checkbox.addEventListener("change", () => {
+            void this.store.setIncompleteOnly(this.activeView as TaskView, checkbox.checked);
+        });
+        incomplete.append(checkbox, document.createTextNode(this.i18n.incomplete));
+        filters.append(incomplete);
+        if (this.activeView === "all") {
+            this.appendMultiSelect(filters, "project");
+        }
+        this.appendMultiSelect(filters, "label");
         if (this.onCreateTask) {
             const create = document.createElement("button");
             create.type = "button";
             create.className = "b3-button b3-button--outline";
             create.dataset.action = "create-task";
             create.textContent = this.i18n.newTask;
-            create.disabled = this.isWriteDisabled();
+            create.disabled = disabled;
             create.addEventListener("click", () => this.onCreateTask?.());
             filters.append(create);
         }
-        if (this.onManageProjects) {
-            const manage = document.createElement("button");
-            manage.type = "button";
-            manage.className = "b3-button b3-button--text";
-            manage.dataset.action = "manage-projects";
-            manage.textContent = this.i18n.manageProjects;
-            manage.disabled = this.isWriteDisabled();
-            manage.addEventListener("click", () => this.onManageProjects?.());
-            filters.append(manage);
-        }
-        if (this.onManageLabels) {
-            const manage = document.createElement("button");
-            manage.type = "button";
-            manage.className = "b3-button b3-button--text";
-            manage.dataset.action = "manage-labels";
-            manage.textContent = this.i18n.manageLabels;
-            manage.disabled = this.isWriteDisabled();
-            manage.addEventListener("click", () => this.onManageLabels?.());
-            filters.append(manage);
-        }
-        root.append(filters);
+        void state;
+        return filters;
+    }
 
-        const state = this.store.getState(this.activeView);
+    private appendMultiSelect(
+        filters: HTMLElement,
+        key: "project" | "label",
+    ): void {
+        const view = this.activeView as TaskView;
+        const filterState = this.store.getFilters(view);
+        const options: MultiSelectOption[] = key === "project"
+            ? this.getProjects()
+                  .filter((project) => !project.archived || filterState.projectIds.includes(project.id))
+                  .map((project) => ({
+                      id: project.id,
+                      label: this.projectPath(project.id) || project.title,
+                      color: project.color,
+                  }))
+            : this.getLabels().map((label) => ({
+                  id: label.id,
+                  label: label.title,
+                  color: label.color,
+              }));
+        const control = createMultiSelectFilter({
+            key,
+            label: key === "project" ? this.i18n.projects : this.i18n.labels,
+            selectedIds: key === "project" ? filterState.projectIds : filterState.labelIds,
+            options,
+            disabled: this.isWriteDisabled(),
+            onChange: (ids) =>
+                void (key === "project"
+                    ? this.store.setProjectIds(view, ids)
+                    : this.store.setLabelIds(view, ids)),
+        });
+        this.multiSelects.push(control);
+        filters.append(control);
+    }
+
+    private renderTaskContent(): HTMLElement {
         const content = document.createElement("main");
         content.className = "vcp-siyuan-dock__content";
-        if (this.store.needsConfiguration()) {
-            this.appendNotice(content, this.i18n.unconfigured, "unconfigured");
-        } else if (state.status === "loading" || state.status === "idle") {
+        const view = this.activeView as TaskView;
+        const state = this.store.getState(view);
+        if (this.store.getConfigurationError(view)) {
+            const notice = document.createElement("div");
+            notice.className = "vcp-siyuan-dock__notice";
+            notice.textContent = this.store.getConfigurationError(view) === "inbox"
+                ? this.i18n.inboxNotConfigured
+                : this.i18n.unconfigured;
+            content.append(notice);
+            return content;
+        }
+        if (state.status === "loading" || state.status === "idle") {
             const loading = document.createElement("div");
             loading.className = "vcp-siyuan-dock__loading";
-            loading.setAttribute("role", "status");
             loading.textContent = this.i18n.loading;
             content.append(loading);
         } else if (state.status === "offline") {
-            const snapshot = state.snapshotAt
-                ? this.i18n.snapshotAt(
-                      new Intl.DateTimeFormat(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                      }).format(state.snapshotAt),
-                  )
-                : "";
-            this.appendNotice(
-                content,
-                snapshot
-                    ? `${this.i18n.offline} · ${snapshot}`
-                    : this.i18n.offline,
-                "offline",
-            );
-            this.appendRows(content);
+            this.appendNotice(content, `${this.i18n.offline}${state.snapshotAt ? ` · ${this.i18n.snapshotAt(new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" }).format(state.snapshotAt))}` : ""}`, "offline");
+            this.appendRows(content, view);
         } else if (state.status === "error") {
-            this.appendNotice(
-                content,
-                state.error || this.i18n.loadError,
-                "error",
-            );
-            if (state.items.length > 0) this.appendRows(content);
+            this.appendNotice(content, state.error || this.i18n.loadError, "error");
+            if (state.items.length > 0) this.appendRows(content, view);
         } else {
             if (state.status === "refreshing") {
                 const refreshing = document.createElement("div");
                 refreshing.className = "vcp-siyuan-dock__refreshing";
-                refreshing.setAttribute("role", "status");
                 refreshing.textContent = this.i18n.refreshing;
                 content.append(refreshing);
             }
-            this.appendRows(content);
+            this.appendRows(content, view);
+        }
+        return content;
+    }
+
+    private renderResources(root: HTMLElement): void {
+        const content = document.createElement("main");
+        content.className = "vcp-siyuan-dock__content vcp-siyuan-dock__resources";
+        const status = this.resourceStatus();
+        if (status === "loading" || status === "idle") {
+            const notice = document.createElement("div");
+            notice.className = "vcp-siyuan-dock__loading";
+            notice.textContent = this.i18n.resourcesLoading;
+            content.append(notice);
+        } else if (status === "error") {
+            this.appendNotice(content, this.resourceError() || this.i18n.resourcesError, "error");
+            const retry = document.createElement("button");
+            retry.type = "button";
+            retry.className = "b3-button b3-button--text";
+            retry.textContent = this.i18n.retry;
+            retry.addEventListener("click", () => void this.retryResources?.());
+            content.append(retry);
+        }
+        if (this.renderResourceManagement) {
+            this.resourceDisposer = this.renderResourceManagement(content) || undefined;
         }
         root.append(content);
-        root.append(this.createFooter(state));
     }
 
-    private createFilterButton(
-        key: "current-document" | "assigned-to-me",
-        label: string,
-        selected: boolean,
-    ): HTMLButtonElement {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "b3-button b3-button--text vcp-siyuan-dock__filter";
-        button.dataset.filter = key;
-        button.setAttribute("aria-pressed", String(selected));
-        button.textContent = label;
-        button.addEventListener("click", () => {
-            const enabled = !selected;
-            if (key === "current-document") {
-                this.store.setCurrentDocumentFilter(enabled);
-                void this.onCurrentDocumentFilterChange?.(enabled);
-            } else {
-                this.store.setAssignedToMe(enabled);
-                void this.onAssignedToMeFilterChange?.(enabled);
-            }
-        });
-        return button;
-    }
-
-    private appendRows(content: HTMLElement): void {
-        const groups = this.store.getGroups(this.activeView, this.now());
-        const visibleCount = groups.reduce(
-            (count, group) => count + group.items.length,
-            0,
-        );
-        if (visibleCount === 0) {
+    private appendRows(content: HTMLElement, view: TaskView): void {
+        const items = this.store.getVisibleItems(view);
+        if (items.length === 0) {
             const empty = document.createElement("div");
             empty.className = "vcp-siyuan-dock__empty";
             empty.textContent = this.i18n.empty;
             content.append(empty);
-            this.appendLoadMore(content);
-            return;
-        }
-        const groupsRoot = document.createElement("div");
-        groupsRoot.className = "vcp-siyuan-dock__groups";
-        for (const group of groups) {
-            if (group.items.length === 0) continue;
-            const groupElement = document.createElement("section");
-            groupElement.className = "vcp-siyuan-dock__group";
-            const heading = document.createElement("h3");
-            heading.className = "vcp-siyuan-dock__group-title";
-            heading.textContent = this.i18n.groupLabel(group.key);
-            groupElement.append(heading);
-            for (const task of group.items) {
-                groupElement.append(
+        } else {
+            const rows = document.createElement("div");
+            rows.className = "vcp-siyuan-dock__groups";
+            for (const task of items) {
+                rows.append(
                     createTaskRow(task, this.i18n, {
                         onOpen: this.onOpenTask,
-                        onToggleDone: (taskId, done) => {
-                            void this.store.toggleDone(taskId, done);
-                        },
+                        onToggleDone: (taskId, done) => void this.store.toggleDone(taskId, done),
                         canComplete: !this.isWriteDisabled(),
                     }),
                 );
             }
-            groupsRoot.append(groupElement);
+            content.append(rows);
         }
-        content.append(groupsRoot);
-        this.appendLoadMore(content);
+        const state = this.store.getState(view);
+        if (state.items.length > 0 && state.items.length < state.total) {
+            const loadMore = document.createElement("button");
+            loadMore.type = "button";
+            loadMore.className = "b3-button b3-button--text vcp-siyuan-dock__load-more";
+            loadMore.dataset.action = "load-more";
+            loadMore.textContent = this.i18n.loadMore;
+            loadMore.disabled = this.store.isLoadingMore();
+            loadMore.addEventListener("click", () => void this.store.loadNextPage());
+            content.append(loadMore);
+        }
     }
 
-    private appendLoadMore(content: HTMLElement): void {
-        const state = this.store.getState(this.activeView);
-        if (state.items.length === 0 || state.items.length >= state.total)
-            return;
-        const loadMore = document.createElement("button");
-        loadMore.type = "button";
-        loadMore.className =
-            "b3-button b3-button--text vcp-siyuan-dock__load-more";
-        loadMore.dataset.action = "load-more";
-        loadMore.textContent = this.i18n.loadMore;
-        loadMore.disabled = this.store.isLoadingMore();
-        loadMore.addEventListener("click", () => {
-            void this.store.loadNextPage().catch(() => {});
-        });
-        content.append(loadMore);
-    }
-
-    private createFooter(
-        state: ReturnType<TaskListStore["getState"]>,
-    ): HTMLElement {
+    private createFooter(): HTMLElement {
         const footer = document.createElement("footer");
         footer.className = "vcp-siyuan-dock__footer";
-        const visible = this.store.getVisibleItems(this.activeView).length;
-        const count = document.createElement("span");
-        count.textContent = this.i18n.shownCount(visible, state.total);
-        const filterState = this.store.getFilterState();
-        if (filterState.currentDocument || filterState.assignedToMe) {
-            const filtered = document.createElement("span");
-            filtered.textContent = this.i18n.serverFiltered;
-            footer.append(filtered);
-        }
-        const timeZone = document.createElement("span");
-        timeZone.textContent = this.i18n.timeZoneLabel(
-            this.store.getTimeZone(),
-        );
-        footer.prepend(count, timeZone);
+        const state = this.store.getState(this.activeView as TaskView);
+        footer.textContent = `${this.i18n.shownCount(this.store.getVisibleItems(this.activeView as TaskView).length, state.total)} · ${this.i18n.timeZoneLabel(this.store.getTimeZone())}`;
         return footer;
     }
 
     private appendNotice(
         content: HTMLElement,
         message: string,
-        kind: "unconfigured" | "offline" | "error",
+        kind: "offline" | "error",
     ): void {
         const notice = document.createElement("div");
         notice.className = "vcp-siyuan-dock__notice";
         notice.dataset.state = kind;
-        notice.setAttribute("role", "status");
         notice.textContent = message;
         content.append(notice);
     }
 
     private isWriteDisabled(): boolean {
-        const status = this.store.getState(this.activeView).status;
-        return (
-            this.store.needsConfiguration() ||
-            status === "offline" ||
-            status === "error" ||
-            status === "loading" ||
-            status === "idle"
-        );
-    }
-
-    private connectionLabel(
-        status: ReturnType<TaskListStore["getState"]>["status"],
-    ): string {
-        return status === "offline" || status === "error"
-            ? this.i18n.connectionOffline
-            : this.i18n.connectionOnline;
-    }
-
-    private viewLabel(view: TaskView): string {
+        const view = this.activeView as TaskView;
         const state = this.store.getState(view);
-        const label =
-            view === "focus"
-                ? this.i18n.focus
-                : view === "inbox"
-                  ? this.i18n.inbox
-                  : this.i18n.planned;
-        return `${label} (${state.total})`;
+        return this.store.needsConfiguration(view) || ["offline", "error", "loading", "idle"].includes(state.status);
+    }
+
+    private viewLabel(view: DockView): string {
+        if (view === "resources") return this.i18n.projectsAndLabels;
+        const state = this.store.getState(view);
+        return `${view === "inbox" ? this.i18n.inbox : this.i18n.allTasks} (${state.total})`;
+    }
+
+    private disposeDynamicContent(): void {
+        for (const control of this.multiSelects) control.destroy();
+        this.multiSelects = [];
+        this.resourceDisposer?.();
+        this.resourceDisposer = undefined;
     }
 }

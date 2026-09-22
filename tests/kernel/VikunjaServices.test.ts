@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AttachmentService } from "../../src/kernel/services/AttachmentService.js";
 import { ConnectionService } from "../../src/kernel/services/ConnectionService.js";
 import { TaskCommandService } from "../../src/kernel/services/TaskCommandService.js";
+import { TaskQueryService } from "../../src/kernel/services/TaskQueryService.js";
 import { HttpTransportError } from "../../src/kernel/http/HttpClient.js";
 
 const credentials = {
@@ -97,6 +98,42 @@ describe("Vikunja application services", () => {
         const result = await service.test(credentials);
         expect(result.ok).toBe(true);
         if (result.ok) expect(result.data.writesAllowed).toBe(false);
+    });
+
+    it("validates structured task filter IDs and inbox project filters", async () => {
+        const gateway = { query: vi.fn() };
+        const service = new TaskQueryService(gateway as never);
+        const base = {
+            view: "all" as const,
+            page: 1,
+            perPage: 50,
+            timeZone: "UTC",
+            doneFilter: "open" as const,
+            projectIds: [],
+            labelIds: [],
+        };
+
+        for (const ids of [[0], [-1], [1.5], [Number.MAX_SAFE_INTEGER + 1]]) {
+            const result = await service.query(credentials, {
+                ...base,
+                projectIds: ids,
+            });
+            expect(result).toMatchObject({
+                ok: false,
+                error: { code: "VALIDATION_ERROR" },
+            });
+        }
+        const inbox = await service.query(credentials, {
+            ...base,
+            view: "inbox",
+            inboxProjectId: 7,
+            projectIds: [2],
+        });
+        expect(inbox).toMatchObject({
+            ok: false,
+            error: { code: "VALIDATION_ERROR" },
+        });
+        expect(gateway.query).not.toHaveBeenCalled();
     });
 
     it("returns ATTACHMENTS_DISABLED without calling the gateway", async () => {

@@ -109,7 +109,7 @@ const taskWire = {
 };
 
 describe("Vikunja v2.5.0 resource gateways", () => {
-    it("queries focus and inbox through the v2 paths and maps task pages", async () => {
+    it("queries all tasks with OR within resources and AND across resources", async () => {
         const client = new FakeClient();
         client.responses.push({
             items: [taskWire],
@@ -119,10 +119,13 @@ describe("Vikunja v2.5.0 resource gateways", () => {
         });
         const gateway = new TaskGateway(client as never);
         const result = await gateway.query(credentials, {
-            view: "focus",
+            view: "all",
             page: 1,
             perPage: 50,
             timeZone: "Asia/Shanghai",
+            doneFilter: "open",
+            projectIds: [2, 1, 2],
+            labelIds: [4, 3, 4],
         });
         expect(result.data.items[0].id).toBe(12);
         expect(client.requests[0].path).toBe("/tasks");
@@ -133,26 +136,61 @@ describe("Vikunja v2.5.0 resource gateways", () => {
         expect(
             (client.requests[0].options?.query as Record<string, unknown>)
                 .sort_by,
-        ).toEqual(["priority", "updated"]);
+        ).toEqual(["due_date", "priority"]);
         expect(
             (client.requests[0].options?.query as Record<string, unknown>)
-                .order_by,
-        ).toEqual(["desc", "desc"]);
+                .filter,
+        ).toBe("done = false && project_id in 1,2 && labels in 3,4");
+    });
 
+    it("omits completion and empty resource filters for all tasks", async () => {
+        const client = new FakeClient();
+        client.responses.push({
+            items: [],
+            total: 0,
+            page: 1,
+            per_page: 50,
+        });
+        const gateway = new TaskGateway(client as never);
+        await gateway.query(credentials, {
+            view: "all",
+            page: 1,
+            perPage: 50,
+            timeZone: "UTC",
+            doneFilter: "all",
+            projectIds: [],
+            labelIds: [],
+        });
+        expect(
+            (client.requests[0].options?.query as Record<string, unknown>)
+                .filter,
+        ).toBeUndefined();
+    });
+
+    it("queries inbox through the project-scoped path", async () => {
+        const client = new FakeClient();
         client.responses.push({
             items: [taskWire],
             total: 1,
             page: 1,
             per_page: 50,
         });
+        const gateway = new TaskGateway(client as never);
         await gateway.query(credentials, {
             view: "inbox",
             inboxProjectId: 7,
             page: 1,
             perPage: 50,
             timeZone: "UTC",
+            doneFilter: "open",
+            projectIds: [],
+            labelIds: [4],
         });
-        expect(client.requests[1].path).toBe("/projects/7/tasks");
+        expect(client.requests[0].path).toBe("/projects/7/tasks");
+        expect(
+            (client.requests[0].options?.query as Record<string, unknown>)
+                .filter,
+        ).toBe("done = false && labels in 4");
     });
 
     it("uses markdown detail/create and sends only scalar dirty fields", async () => {

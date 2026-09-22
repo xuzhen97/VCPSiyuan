@@ -60,6 +60,21 @@
         padding-top: 8px;
     }
 
+    &__resources {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    &__resource-section {
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--b3-border-color);
+    }
+
+    &__resource-section:last-child {
+        border-bottom: 0;
+    }
+
     &__tabs {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -83,21 +98,175 @@
     }
 
     &__filters {
-        padding-bottom: 7px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 34px;
+        padding: 2px 0 7px;
 
-        button {
-            min-height: 28px;
-            font-size: 12px;
+        > button,
+        > label,
+        > .vcp-siyuan-dock__multi-select {
+            flex: 0 0 auto;
         }
 
-        [aria-pressed="true"] {
-            color: var(--b3-theme-primary);
-            background: color-mix(in srgb, var(--b3-theme-primary) 10%, transparent);
+        button {
+            min-height: 30px;
+            font-size: 12px;
         }
 
         [data-action="create-task"] {
             margin-left: auto;
         }
+    }
+
+    &__check-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 30px;
+        padding: 0 4px;
+        color: var(--b3-theme-on-surface-light);
+        font-size: 12px;
+        white-space: nowrap;
+
+        input {
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            accent-color: var(--b3-theme-primary);
+        }
+    }
+
+    &__multi-select {
+        position: relative;
+        min-width: 0;
+    }
+
+    &__multi-select-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        max-width: 145px;
+        padding: 0 9px;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+        background: var(--b3-theme-background);
+        color: var(--b3-theme-on-surface-light);
+        white-space: nowrap;
+
+        &[aria-expanded="true"],
+        &:hover,
+        &:focus-visible {
+            border-color: var(--b3-theme-primary);
+            color: var(--b3-theme-primary);
+            background: color-mix(in srgb, var(--b3-theme-primary) 7%, var(--b3-theme-background));
+        }
+
+        // Scoped to the trigger on purpose: the host ships
+        // `.b3-button svg { width: 16px; height: 16px; margin-right: 4px }`
+        // and `svg { fill: currentcolor }`, both of which outrank a bare
+        // class selector and would resize, offset and fill the chevron.
+        .vcp-siyuan-dock__multi-select-chevron {
+            display: block;
+            flex: 0 0 auto;
+            width: 12px;
+            height: 12px;
+            margin: 0;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+    }
+
+    &__multi-select-label {
+        overflow: hidden;
+        line-height: 1;
+        text-overflow: ellipsis;
+    }
+
+    &__multi-select-search {
+        width: 100%;
+        min-height: 30px;
+        box-sizing: border-box;
+        padding: 5px 7px;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 5px;
+        background: var(--b3-theme-background);
+        color: inherit;
+        font: inherit;
+        font-size: 12px;
+    }
+
+    &__multi-select-popover {
+        position: absolute;
+        z-index: 20;
+        top: calc(100% + 5px);
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: max-content;
+        min-width: 190px;
+        max-width: min(280px, calc(100vw - 32px));
+        max-height: 260px;
+        overflow-y: auto;
+        padding: 5px;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 8px;
+        background: var(--b3-theme-background);
+        box-shadow: 0 6px 18px color-mix(in srgb, #000 18%, transparent);
+
+        &[hidden] {
+            display: none;
+        }
+    }
+
+    &__multi-select-option {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 32px;
+        padding: 0 7px;
+        border-radius: 5px;
+        color: var(--b3-theme-on-surface);
+        font-size: 12px;
+        cursor: pointer;
+
+        &:hover,
+        &[data-selected="true"] {
+            background: color-mix(in srgb, var(--b3-theme-primary) 10%, var(--b3-theme-background));
+        }
+
+        input[type="radio"],
+        input[type="checkbox"] {
+            width: 15px;
+            min-width: 15px;
+            max-width: 15px;
+            height: 15px;
+            flex: 0 0 15px;
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+            accent-color: var(--b3-theme-primary);
+        }
+    }
+
+    &__multi-select-option-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__multi-select-swatch {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--b3-border-color);
     }
 
     &__notice,
@@ -141,37 +310,29 @@
     &__task {
         position: relative;
         display: grid;
-        grid-template-columns: 26px minmax(0, 1fr) auto;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
         align-items: start;
         gap: 6px;
         width: 100%;
         box-sizing: border-box;
         margin: 2px 0;
+        // A real border keeps the priority cue attached to the row; the old
+        // detached pseudo element floated beside the row's own padding.
         padding: 8px 5px 8px 8px;
         border: 0;
+        border-left: 2px solid var(--b3-border-color);
         border-radius: 4px;
         background: transparent;
         color: inherit;
         text-align: left;
 
-        &::before {
-            position: absolute;
-            inset: 7px auto 7px 0;
-            width: 2px;
-            border-radius: 2px;
-            background: var(--b3-border-color);
-            content: "";
-        }
-
-        &[data-priority="2"]::before {
-            background: var(--b3-theme-warning);
+        &[data-priority="2"] {
+            border-left-color: var(--b3-theme-warning);
         }
 
         &[data-priority="3"],
         &[data-priority="4"] {
-            &::before {
-                background: var(--b3-theme-error);
-            }
+            border-left-color: var(--b3-theme-error);
         }
 
         &:hover,
@@ -186,14 +347,38 @@
     }
 
     &__task-complete {
-        width: 24px;
-        min-width: 24px;
-        height: 24px;
+        // 18px against a 17.55px first title line, so the two centres line up
+        // without a magic offset.
+        appearance: none;
+        flex: 0 0 auto;
+        box-sizing: border-box;
+        width: 18px;
+        min-width: 18px;
+        height: 18px;
+        margin: 0;
         padding: 0;
-        border: 1px solid var(--b3-border-color);
-        border-radius: 50%;
-        font-size: 12px;
-        line-height: 22px;
+        border: 1.5px solid var(--b3-border-color);
+        border-radius: 4px;
+        background: var(--b3-theme-background);
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+            border-color: var(--b3-theme-primary);
+        }
+
+        &:checked {
+            border-color: var(--b3-theme-primary);
+            background-color: var(--b3-theme-primary);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 12px 12px;
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: .52;
+        }
     }
 
     &__task-body {
@@ -317,6 +502,26 @@
             margin: 0;
             color: var(--b3-theme-on-surface-light);
             font-size: 12px;
+        }
+    }
+
+    &__attachment-upload {
+        align-self: flex-start;
+        padding: 6px 10px;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+        background: var(--b3-theme-background);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+
+        &:hover {
+            border-color: var(--b3-theme-primary);
+            color: var(--b3-theme-primary);
+        }
+
+        input {
+            display: none;
         }
     }
 

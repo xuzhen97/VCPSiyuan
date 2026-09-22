@@ -37,13 +37,11 @@ describe("VCPSiyuanPlugin lifecycle", () => {
 
         expect(addIconsMock).toHaveBeenCalledTimes(1);
         expect(addDockMock).toHaveBeenCalledTimes(1);
-        expect(onMock).toHaveBeenCalledTimes(2);
+        expect(onMock).toHaveBeenCalledTimes(1);
         expect(onMock.mock.calls.map(([event]) => event)).toEqual([
             "click-blockicon",
-            "switch-protyle",
         ]);
         const handler = onMock.mock.calls[0][1];
-        const switchHandler = onMock.mock.calls[1][1];
 
         await plugin.onLayoutReady();
         expect(loadDataMock).toHaveBeenCalledWith("config.json");
@@ -59,9 +57,8 @@ describe("VCPSiyuanPlugin lifecycle", () => {
 
         await plugin.onunload();
         await plugin.onunload();
-        expect(offMock).toHaveBeenCalledTimes(2);
+        expect(offMock).toHaveBeenCalledTimes(1);
         expect(offMock).toHaveBeenCalledWith("click-blockicon", handler);
-        expect(offMock).toHaveBeenCalledWith("switch-protyle", switchHandler);
 
         await plugin.uninstall();
         expect(removeDataMock).toHaveBeenCalledTimes(4);

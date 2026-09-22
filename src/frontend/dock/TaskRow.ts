@@ -31,21 +31,24 @@ export function createTaskRow(
     if ((task.priority ?? 0) > 0)
         row.dataset.priority = String(task.priority ?? 0);
 
-    const completion = document.createElement("button");
-    completion.type = "button";
-    completion.className = "vcp-siyuan-dock__task-complete b3-button";
+    // A native checkbox keeps completion keyboard- and screen-reader-visible;
+    // the host's primary-button skin made it read as a coloured status dot.
+    const completion = document.createElement("input");
+    completion.type = "checkbox";
+    completion.className = "vcp-siyuan-dock__task-complete";
     completion.dataset.action = "complete-task";
+    completion.checked = task.done === true;
     completion.setAttribute(
         "aria-label",
         task.done ? i18n.reopen : i18n.complete,
     );
-    completion.setAttribute("aria-pressed", String(task.done === true));
-    completion.textContent = task.done ? "✓" : "";
     completion.disabled =
         options.onToggleDone === undefined || options.canComplete === false;
     completion.addEventListener("click", (event) => {
         event.stopPropagation();
-        options.onToggleDone?.(task.id, !task.done);
+    });
+    completion.addEventListener("change", () => {
+        options.onToggleDone?.(task.id, completion.checked);
     });
 
     const body = document.createElement("div");

@@ -115,22 +115,15 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
         expect(inbox?.parentProjectId).toBeNull();
     });
 
-    it("queries the focus view", async () => {
+    it("queries all tasks with structured filters", async () => {
         const result = await stack.tasks.query(credentials, {
-            view: "focus",
+            view: "all",
             page: 1,
             perPage: 50,
             timeZone: "Asia/Shanghai",
-        });
-        expect(result).toMatchObject({ ok: true });
-    });
-
-    it("queries the planned view", async () => {
-        const result = await stack.tasks.query(credentials, {
-            view: "planned",
-            page: 1,
-            perPage: 50,
-            timeZone: "Asia/Shanghai",
+            doneFilter: "open",
+            projectIds: [],
+            labelIds: [],
         });
         expect(result).toMatchObject({ ok: true });
     });
@@ -142,6 +135,9 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
             page: 1,
             perPage: 50,
             timeZone: "Asia/Shanghai",
+            doneFilter: "open",
+            projectIds: [],
+            labelIds: [],
         });
         expect(result).toMatchObject({ ok: true });
         if (!result.ok) return;
