@@ -198,8 +198,13 @@ export class TaskListStore {
 
     async activate(view: TaskView): Promise<void> {
         this.activeView = view;
-        if (this.states.get(view)!.status === "idle") await this.refresh(view);
-        else this.notify();
+        // Always re-query: the tab badge and rows of a previously loaded view
+        // would otherwise stay stale forever (refresh only ran for "idle").
+        await this.refresh(view);
+    }
+
+    async refreshAll(): Promise<void> {
+        await Promise.all(VIEWS.map((view) => this.refresh(view)));
     }
 
     async refresh(view: TaskView = this.activeView): Promise<void> {
@@ -395,9 +400,13 @@ export class TaskListStore {
     removeTask(taskId: number): void {
         for (const view of VIEWS) {
             const state = this.states.get(view)!;
+            if (!state.items.some((item) => item.id === taskId)) continue;
             this.states.set(view, {
                 ...state,
                 items: state.items.filter((item) => item.id !== taskId),
+                // Tab badges and the footer read `total`; a local removal has
+                // to move it or the count freezes at the last server answer.
+                total: Math.max(0, state.total - 1),
             });
         }
         this.notify();
@@ -427,12 +436,13 @@ export class TaskListStore {
     }
 
     private replaceOrRemove(view: TaskView, summary: TaskSummary): void {
+        const state = this.states.get(view)!;
         if (summary.done === true && this.filters.get(view)!.incompleteOnly) {
+            if (!state.items.some((item) => item.id === summary.id)) return;
             this.states.set(view, {
-                ...this.states.get(view)!,
-                items: this.states.get(view)!.items.filter(
-                    (item) => item.id !== summary.id,
-                ),
+                ...state,
+                items: state.items.filter((item) => item.id !== summary.id),
+                total: Math.max(0, state.total - 1),
             });
             return;
         }

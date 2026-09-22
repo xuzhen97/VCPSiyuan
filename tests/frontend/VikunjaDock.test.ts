@@ -53,8 +53,11 @@ describe("VikunjaDock", () => {
             expect(element.textContent).toContain("Write documentation");
         });
 
-        expect(call).toHaveBeenCalledTimes(1);
-        expect(call).toHaveBeenCalledWith(
+        // Mount refreshes every task view so both tab badges are real before
+        // the user ever switches.
+        expect(call).toHaveBeenCalledTimes(2);
+        expect(call).toHaveBeenNthCalledWith(
+            1,
             "vikunja.tasks.query",
             expect.objectContaining({
                 view: "inbox",
@@ -66,6 +69,15 @@ describe("VikunjaDock", () => {
                 labelIds: [],
             }),
         );
+        expect(call).toHaveBeenNthCalledWith(
+            2,
+            "vikunja.tasks.query",
+            expect.objectContaining({
+                view: "all",
+                page: 1,
+                perPage: 50,
+            }),
+        );
         expect(element.textContent).toContain(dockI18n.inbox);
         expect(element.textContent).toContain(dockI18n.allTasks);
         expect(element.textContent).toContain(dockI18n.projectsAndLabels);
@@ -75,6 +87,35 @@ describe("VikunjaDock", () => {
                 .querySelector(".vcp-siyuan-dock__task-priority")
                 ?.getAttribute("aria-label"),
         ).toBe(dockI18n.priorityLabel(2));
+    });
+
+    it("refreshes both task views when the refresh action runs", async () => {
+        const call = vi.fn().mockResolvedValue({
+            ok: true,
+            data: { items: [], total: 0, page: 1, perPage: 50 },
+        });
+        const dock = new VikunjaDock({
+            store: storeWith(call),
+            openSettings: vi.fn(),
+            i18n: dockI18n,
+        });
+        const element = document.createElement("div");
+        dock.mount(element);
+        await vi.waitFor(() => {
+            expect(call).toHaveBeenCalledTimes(2);
+        });
+
+        [...element.querySelectorAll("button")]
+            .find((button) => button.textContent === dockI18n.refresh)
+            ?.click();
+
+        await vi.waitFor(() => {
+            const views = call.mock.calls.map((entry) => entry[1]?.view);
+            expect(views.filter((view) => view === "inbox")).toHaveLength(2);
+            // The inactive tab's badge is visible too: refresh must re-query it,
+            // not just the active view.
+            expect(views.filter((view) => view === "all")).toHaveLength(2);
+        });
     });
 
     it("renders task titles as plain text", async () => {

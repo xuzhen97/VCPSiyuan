@@ -121,6 +121,18 @@ export class TaskGateway {
         return mapTaskDetail(response.data);
     }
 
+    async delete(
+        credentials: VikunjaCredentials,
+        taskId: number,
+    ): Promise<void> {
+        await this.client.requestJson<void>(
+            credentials,
+            "DELETE",
+            `/tasks/${this.assertId(taskId, "taskId")}`,
+            { responseMode: "empty" },
+        );
+    }
+
     async setLabels(
         credentials: VikunjaCredentials,
         taskId: number,

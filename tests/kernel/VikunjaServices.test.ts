@@ -152,6 +152,58 @@ describe("Vikunja application services", () => {
         expect(gateway.upload).not.toHaveBeenCalled();
     });
 
+    it("deletes a task only when writes are enabled and the title is unchanged", async () => {
+        const gateway = {
+            get: vi.fn().mockResolvedValue({
+                value: { id: 1, title: "Buy milk" },
+                etag: '"v1"',
+                updatedAt: "1",
+            }),
+            delete: vi.fn().mockResolvedValue(undefined),
+        };
+
+        const readOnly = new TaskCommandService(gateway as never, {
+            writesAllowed: false,
+        });
+        const forbidden = await readOnly.delete(credentials, {
+            taskId: 1,
+            expectedTitle: "Buy milk",
+        });
+        expect(forbidden).toMatchObject({
+            ok: false,
+            error: { code: "FORBIDDEN" },
+        });
+        expect(gateway.delete).not.toHaveBeenCalled();
+
+        const service = new TaskCommandService(gateway as never, {
+            writesAllowed: true,
+        });
+        const invalid = await service.delete(credentials, {
+            taskId: 0,
+            expectedTitle: "Buy milk",
+        });
+        expect(invalid).toMatchObject({
+            ok: false,
+            error: { code: "VALIDATION_ERROR" },
+        });
+
+        // The title is the stale-guard the project/label deletes use: a rename
+        // made remotely after the dialog opened must block the deletion.
+        const stale = await service.delete(credentials, {
+            taskId: 1,
+            expectedTitle: "Renamed remotely",
+        });
+        expect(stale).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+        expect(gateway.delete).not.toHaveBeenCalled();
+
+        const result = await service.delete(credentials, {
+            taskId: 1,
+            expectedTitle: "Buy milk",
+        });
+        expect(result).toEqual({ ok: true, data: undefined });
+        expect(gateway.delete).toHaveBeenCalledWith(credentials, 1);
+    });
+
     it("blocks a stale update before PATCH and refreshes after a successful relation update", async () => {
         const gateway = {
             get: vi.fn().mockResolvedValue({

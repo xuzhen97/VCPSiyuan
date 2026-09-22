@@ -2,6 +2,7 @@ import { RpcResult, VikunjaCredentials } from "../../shared/contracts.js";
 import { publicError } from "../../shared/errors.js";
 import {
     CreateTaskRequest,
+    DeleteTaskRequest,
     GetTaskRequest,
     PatchTaskRequest,
 } from "../../shared/rpc.js";
@@ -189,6 +190,50 @@ export class TaskCommandService {
                 }
             }
             return { ok: false, error: mapCommandError(error) };
+        }
+    }
+
+    async delete(
+        credentials: VikunjaCredentials,
+        request: DeleteTaskRequest,
+    ): Promise<RpcResult<void>> {
+        if (!(await this.writesEnabled(credentials)))
+            return {
+                ok: false,
+                error: publicError(
+                    "FORBIDDEN",
+                    "Task writes are disabled by the Vikunja server",
+                ),
+            };
+        if (!validId(request.taskId))
+            return {
+                ok: false,
+                error: publicError(
+                    "VALIDATION_ERROR",
+                    "Task ID must be a positive safe integer",
+                ),
+            };
+        try {
+            const current = await this.gateway.get(credentials, request.taskId);
+            // Same stale-title guard as project/label deletion: a rename made
+            // while the confirmation was open means the user reviewed other text.
+            if (current.value.title !== request.expectedTitle)
+                return {
+                    ok: false,
+                    error: publicError(
+                        "CONFLICT",
+                        "Task title changed; review before deleting",
+                        false,
+                        "review",
+                    ),
+                };
+            await this.gateway.delete(credentials, request.taskId);
+            return { ok: true, data: undefined };
+        } catch (error) {
+            return {
+                ok: false,
+                error: toServiceError(error, "Task deletion failed"),
+            };
         }
     }
 

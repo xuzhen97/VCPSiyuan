@@ -33,6 +33,7 @@ describe("TaskDetailView", () => {
             onBack: () => {},
             onComplete: () => {},
             onEdit: () => {},
+            onDelete: () => {},
         });
         view.mount(element);
         expect(element.querySelector("img")).toBeNull();
@@ -52,6 +53,7 @@ describe("TaskDetailView", () => {
             onBack: () => {},
             onComplete: () => {},
             onEdit: () => {},
+            onDelete: () => {},
         }).mount(element);
         expect(
             element.querySelector(".vcp-siyuan-task-detail__meta")?.textContent,
@@ -66,6 +68,7 @@ describe("TaskDetailView", () => {
             onBack: () => {},
             onComplete: () => {},
             onEdit: () => {},
+            onDelete: () => {},
         });
         view.mount(element);
         for (const button of element.querySelectorAll("button")) {
@@ -73,5 +76,44 @@ describe("TaskDetailView", () => {
                 expect(button.hasAttribute("disabled")).toBe(true);
             }
         }
+    });
+
+    it("renders a delete action that fires only when the task is writable", () => {
+        const element = document.createElement("div");
+        let deleted = 0;
+        new TaskDetailView({
+            task: value,
+            i18n: taskDetailViewI18n,
+            onBack: () => {},
+            onComplete: () => {},
+            onEdit: () => {},
+            onDelete: () => {
+                deleted += 1;
+            },
+        }).mount(element);
+        const button = [...element.querySelectorAll("button")].find(
+            (candidate) => candidate.textContent === taskDetailViewI18n.delete,
+        );
+        expect(button).toBeDefined();
+        button!.click();
+        expect(deleted).toBe(1);
+
+        const readOnly = document.createElement("div");
+        new TaskDetailView({
+            task: { ...value, maxPermission: "read" },
+            i18n: taskDetailViewI18n,
+            onBack: () => {},
+            onComplete: () => {},
+            onEdit: () => {},
+            onDelete: () => {
+                deleted += 10;
+            },
+        }).mount(readOnly);
+        const locked = [...readOnly.querySelectorAll("button")].find(
+            (candidate) => candidate.textContent === taskDetailViewI18n.delete,
+        );
+        expect(locked?.hasAttribute("disabled")).toBe(true);
+        locked!.click();
+        expect(deleted).toBe(1);
     });
 });

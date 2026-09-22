@@ -47,6 +47,7 @@ const RPC_DESCRIPTIONS: Partial<Record<VikunjaRpcMethod, string>> = {
     "vikunja.tasks.get": "Loads one typed Vikunja task detail",
     "vikunja.tasks.create": "Creates one Vikunja task",
     "vikunja.tasks.patch": "Patches one Vikunja task",
+    "vikunja.tasks.delete": "Deletes one Vikunja task",
     "vikunja.projects.deleteImpact":
         "Previews the complete project deletion impact",
     "vikunja.labels.deleteImpact": "Previews label usage in accessible tasks",
@@ -62,6 +63,7 @@ export async function registerVikunjaRpc(
         bind("vikunja.tasks.get", services, "commands", "get"),
         bind("vikunja.tasks.create", services, "commands", "create"),
         bind("vikunja.tasks.patch", services, "commands", "update"),
+        bind("vikunja.tasks.delete", services, "commands", "delete"),
         bind("vikunja.projects.list", services, "projects", "list"),
         bind("vikunja.projects.create", services, "projects", "create"),
         bind("vikunja.projects.patch", services, "projects", "patch"),

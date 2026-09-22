@@ -71,6 +71,10 @@ export interface PatchTaskRequest {
     labels?: { before: number[]; after: number[] };
     assignees?: { before: number[]; after: number[] };
 }
+export interface DeleteTaskRequest {
+    taskId: number;
+    expectedTitle: string;
+}
 export interface DeleteProjectRequest {
     projectId: number;
     expectedTitle: string;
@@ -111,6 +115,7 @@ export interface VikunjaRpcMap {
     "vikunja.tasks.get": RpcMethod<GetTaskRequest, Versioned<TaskDetail>>;
     "vikunja.tasks.create": RpcMethod<CreateTaskRequest, TaskDetail>;
     "vikunja.tasks.patch": RpcMethod<PatchTaskRequest, TaskDetail>;
+    "vikunja.tasks.delete": RpcMethod<DeleteTaskRequest, void>;
     "vikunja.projects.list": RpcMethod<ProjectQuery, Page<Project>>;
     "vikunja.projects.create": RpcMethod<CreateProjectRequest, Project>;
     "vikunja.projects.patch": RpcMethod<PatchProjectRequest, Project>;

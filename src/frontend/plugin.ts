@@ -604,14 +604,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 await saveCreatedTask();
                 // Auto-refresh so the dock shows the new task without a manual click.
                 // The active view flashes a brief "refreshing" indicator; the other
-                // two views update silently so the task is ready when the user switches.
-                const store = this.taskListStore;
-                if (store) {
-                    void Promise.all([
-                        store.refresh("inbox"),
-                        store.refresh("all"),
-                    ]);
-                }
+                // view updates silently so the task is ready when the user switches.
+                void this.taskListStore?.refreshAll();
                 attachmentSubscription();
                 attachmentStore.destroy();
                 dialogRef.current?.destroy();
@@ -679,11 +673,23 @@ export class VCPSiyuanPlugin extends Plugin {
                 if (!current) return;
                 void store
                     .toggleDoneForTask(taskId, !current.done)
-                    .then(() => this.openLinkedTask(taskId))
+                    .then(() => {
+                        // The detail store and the list store are separate:
+                        // completion here must resync rows and tab badges too.
+                        void this.taskListStore?.refreshAll();
+                        return this.openLinkedTask(taskId);
+                    })
                     .catch(() => {});
             },
             onEdit: () => {
                 void this.openEditTask(detail);
+            },
+            onDelete: () => {
+                siyuanConfirm(
+                    this.i18n.deleteTaskConfirm,
+                    detail.title,
+                    () => void this.deleteLinkedTask(taskId, detail.title),
+                );
             },
             onRetry: () => void store.retry(),
             attachments:
@@ -1187,6 +1193,7 @@ export class VCPSiyuanPlugin extends Plugin {
                 attachmentStore.destroy();
                 dialog.destroy();
                 disposeHost();
+                void this.taskListStore?.refreshAll();
                 await this.openLinkedTask(detail.id);
             },
             onClose: () => {
@@ -1211,6 +1218,7 @@ export class VCPSiyuanPlugin extends Plugin {
             reopen: this.i18n.reopen,
             complete: this.i18n.complete,
             edit: this.i18n.edit,
+            delete: this.i18n.delete,
             projectPrefix: this.i18n.projectPrefix,
             projectUnknown: this.i18n.projectUnknown,
             status: this.i18n.status,
@@ -1359,6 +1367,34 @@ export class VCPSiyuanPlugin extends Plugin {
             showMessage(this.i18n.loadError);
             return undefined;
         }
+    }
+
+    /**
+     * Deletes the open task and drops every local trace of it: the dock list
+     * rows, the Block link index entries, and the detail dialog itself.
+     */
+    private async deleteLinkedTask(
+        taskId: number,
+        expectedTitle: string,
+    ): Promise<void> {
+        const result = await this.controller.call("vikunja.tasks.delete", {
+            taskId,
+            expectedTitle,
+        });
+        if (!result.ok) {
+            showMessage(result.error.message || result.error.code);
+            return;
+        }
+        this.taskListStore?.removeTask(taskId);
+        const index = this.linkIndex;
+        if (index) {
+            for (const blockId of await index.blocksForTask(taskId))
+                await index.remove(taskId, blockId);
+        }
+        this.closeLinkedTask();
+        showMessage(this.i18n.taskDeleted);
+        // Tasks outside the loaded pages still move the server total.
+        void this.taskListStore?.refreshAll();
     }
 
     private closeLinkedTask(): void {

@@ -11,6 +11,7 @@ export interface TaskDetailViewI18n {
     reopen: string;
     complete: string;
     edit: string;
+    delete: string;
     projectPrefix: string;
     projectUnknown: string;
     status: string;
@@ -48,6 +49,7 @@ export interface TaskDetailViewOptions {
     onBack: () => void;
     onComplete: () => void;
     onEdit: () => void;
+    onDelete: () => void;
     onRetry?: () => void;
     onAttachmentSelect?: (files: File[]) => void;
     onAttachmentRetry?: (itemId: string) => void;
@@ -151,7 +153,14 @@ export class TaskDetailView {
         );
         edit.disabled = !isWritable(task.maxPermission);
         edit.addEventListener("click", () => this.options.onEdit());
-        actions.append(complete, edit);
+        const remove = this.button(
+            i18n.delete,
+            "delete",
+            "b3-button b3-button--text",
+        );
+        remove.disabled = !isWritable(task.maxPermission);
+        remove.addEventListener("click", () => this.options.onDelete());
+        actions.append(complete, edit, remove);
         if (task.maxPermission === "read") {
             const permission = document.createElement("span");
             permission.className = "vcp-siyuan-task-detail__permission";

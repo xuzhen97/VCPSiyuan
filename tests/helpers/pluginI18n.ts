@@ -142,6 +142,7 @@ export const taskDetailViewI18n: TaskDetailViewI18n = {
  reopen: t("reopen"),
  complete: t("complete"),
  edit: t("edit"),
+ delete: t("delete"),
  projectPrefix: t("projectPrefix"),
  projectUnknown: t("projectUnknown"),
  status: t("status"),

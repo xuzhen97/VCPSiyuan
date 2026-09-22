@@ -293,4 +293,81 @@ describe("TaskListStore", () => {
             1, 2, 3,
         ]);
     });
+
+    it("keeps the server total in sync when a task is removed locally", async () => {
+        const controller = {
+            call: vi
+                .fn()
+                .mockResolvedValueOnce(page([task(1), task(2)], 5, 1))
+                .mockResolvedValueOnce(page([task(1), task(2)], 7, 1)),
+        };
+        const store = new TaskListStore({
+            controller: controller as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+        await store.refresh("inbox");
+        await store.refresh("all");
+
+        store.removeTask(1);
+
+        // The tab badges and the footer read `total`, so a local deletion must
+        // move it in every view that listed the task.
+        expect(store.getState("inbox").total).toBe(4);
+        expect(store.getState("all").total).toBe(6);
+        expect(store.getState("inbox").items.map((item) => item.id)).toEqual([
+            2,
+        ]);
+
+        // A task that was never loaded must not move the server-reported total.
+        store.removeTask(99);
+        expect(store.getState("inbox").total).toBe(4);
+        expect(store.getState("all").total).toBe(6);
+    });
+
+    it("decrements the total when a completion filters the row out", async () => {
+        const authoritative: TaskDetail = {
+            ...task(1),
+            done: true,
+            descriptionMarkdown: "",
+            reminders: [],
+            repeat: { kind: "none" },
+            attachments: [],
+            maxPermission: "write",
+            etag: "v2",
+        };
+        const controller = {
+            call: vi
+                .fn()
+                .mockResolvedValueOnce(page([task(1)], 4, 1))
+                .mockResolvedValueOnce({ ok: true, data: authoritative }),
+        };
+        const store = new TaskListStore({
+            controller: controller as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+        await store.refresh("inbox");
+        expect(store.getState("inbox").total).toBe(4);
+
+        await store.toggleDone(1, true);
+
+        expect(store.getState("inbox").items).toEqual([]);
+        expect(store.getState("inbox").total).toBe(3);
+    });
+
+    it("re-queries an already loaded view every time it is activated", async () => {
+        const call = vi.fn().mockResolvedValue(page([task(1)], 1, 1));
+        const store = new TaskListStore({
+            controller: { call } as never,
+            origin: "https://tasks.example",
+            timeZone: "UTC",
+            inboxProjectId: 7,
+        });
+        await store.activate("all");
+        await store.activate("all");
+        expect(call).toHaveBeenCalledTimes(2);
+    });
 });

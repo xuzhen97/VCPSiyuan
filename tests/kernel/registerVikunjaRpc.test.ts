@@ -27,6 +27,7 @@ describe("registerVikunjaRpc", () => {
         const names = rpc.bind.mock.calls.map((call: unknown[]) => call[0]);
         expect(names).toContain("vikunja.connection.test");
         expect(names).toContain("vikunja.tasks.query");
+        expect(names).toContain("vikunja.tasks.delete");
         expect(names).not.toContain("vikunja.testConnection");
 
         const connectionBinding = rpc.bind.mock.calls.find(

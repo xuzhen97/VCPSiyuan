@@ -256,6 +256,17 @@ describe("Vikunja v2.5.0 resource gateways", () => {
         });
     });
 
+    it("issues a bare DELETE on the task resource", async () => {
+        const client = new FakeClient();
+        const gateway = new TaskGateway(client as never);
+        await gateway.delete(credentials, 12);
+        expect(client.requests[0]).toEqual({
+            method: "DELETE",
+            path: "/tasks/12",
+            options: { responseMode: "empty" },
+        });
+    });
+
     it("covers project, label, user, and attachment endpoint shapes", async () => {
         const client = new FakeClient();
         client.responses.push({ items: [], total: 0, page: 1, per_page: 50 });

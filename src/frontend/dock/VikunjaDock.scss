@@ -1,3 +1,39 @@
+// Shared native-control skin. Every dock/plugin checkbox and radio is drawn
+// here instead of trusting the host's `accent-color` defaults, which shrink
+// selection state into a tiny hard-to-see box.
+%choice-box {
+    appearance: none;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    border: 1.5px solid var(--b3-border-color);
+    border-radius: 4px;
+    background: var(--b3-theme-background);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        border-color: var(--b3-theme-primary);
+    }
+
+    &:checked {
+        border-color: var(--b3-theme-primary);
+        background-color: var(--b3-theme-primary);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: 12px 12px;
+    }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: .52;
+    }
+}
+
 .vcp-siyuan-dock {
     display: flex;
     flex-direction: column;
@@ -132,10 +168,7 @@
         white-space: nowrap;
 
         input {
-            width: 15px;
-            height: 15px;
-            margin: 0;
-            accent-color: var(--b3-theme-primary);
+            @extend %choice-box;
         }
     }
 
@@ -241,17 +274,18 @@
             background: color-mix(in srgb, var(--b3-theme-primary) 10%, var(--b3-theme-background));
         }
 
-        input[type="radio"],
         input[type="checkbox"] {
-            width: 15px;
-            min-width: 15px;
-            max-width: 15px;
-            height: 15px;
-            flex: 0 0 15px;
-            box-sizing: border-box;
-            padding: 0;
-            margin: 0;
-            accent-color: var(--b3-theme-primary);
+            @extend %choice-box;
+        }
+
+        // Same skin, circle shape, so single-select never reads as a checkbox.
+        input[type="radio"] {
+            @extend %choice-box;
+            border-radius: 50%;
+
+            &:checked {
+                background-image: radial-gradient(circle, #fff 0 3.5px, transparent 3.5px);
+            }
         }
     }
 
@@ -349,36 +383,7 @@
     &__task-complete {
         // 18px against a 17.55px first title line, so the two centres line up
         // without a magic offset.
-        appearance: none;
-        flex: 0 0 auto;
-        box-sizing: border-box;
-        width: 18px;
-        min-width: 18px;
-        height: 18px;
-        margin: 0;
-        padding: 0;
-        border: 1.5px solid var(--b3-border-color);
-        border-radius: 4px;
-        background: var(--b3-theme-background);
-        cursor: pointer;
-
-        &:hover:not(:disabled) {
-            border-color: var(--b3-theme-primary);
-        }
-
-        &:checked {
-            border-color: var(--b3-theme-primary);
-            background-color: var(--b3-theme-primary);
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: center;
-            background-size: 12px 12px;
-        }
-
-        &:disabled {
-            cursor: not-allowed;
-            opacity: .52;
-        }
+        @extend %choice-box;
     }
 
     &__task-body {

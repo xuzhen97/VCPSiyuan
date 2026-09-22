@@ -119,7 +119,9 @@ export class VikunjaDock {
 
     async refresh(): Promise<void> {
         if (this.destroyed || this.activeView === "resources") return;
-        await this.store.refresh(this.activeView);
+        // Both task views, not just the active one: the other tab's badge is
+        // visible at the same time and must not lag behind.
+        await this.store.refreshAll();
     }
 
     private render(): void {
