@@ -44,6 +44,10 @@ describe("VCPSiyuanPlugin lifecycle", () => {
         plugin.onload();
 
         expect(addIconsMock).toHaveBeenCalledTimes(1);
+        const registeredIcons = addIconsMock.mock.calls[0][0] as string;
+        const iconDocument = new DOMParser().parseFromString(registeredIcons, "image/svg+xml");
+        expect(iconDocument.querySelector("symbol#iconVikunja rect")).toBeNull();
+        expect(iconDocument.querySelector("symbol#iconVikunja path")?.getAttribute("stroke")).toBe("currentColor");
         expect(addDockMock).toHaveBeenCalledTimes(1);
         expect(onMock).toHaveBeenCalledTimes(1);
         expect(onMock.mock.calls.map(([event]) => event)).toEqual([
