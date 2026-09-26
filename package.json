@@ -1,6 +1,6 @@
 {
   "name": "vcp-siyuan",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Connect SiYuan with Vikunja and VCP services",
   "type": "module",
   "scripts": {

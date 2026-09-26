@@ -35,7 +35,7 @@
         line-height: 1.4;
     }
 
-    input,
+    input:not([type="checkbox"]):not([type="radio"]),
     textarea {
         width: 100%;
         box-sizing: border-box;
@@ -45,6 +45,17 @@
         background: var(--b3-theme-background, #fff);
         color: inherit;
         font: inherit;
+    }
+
+    // The modal's text fields stretch to the panel width. Native selection
+    // controls retain intrinsic sizing so task-row checkboxes cannot become
+    // full-width blocks in the dialog.
+    input[type="checkbox"],
+    input[type="radio"] {
+        width: auto;
+        min-width: 0;
+        padding: 0;
+        vertical-align: middle;
     }
 }
 

@@ -4,6 +4,7 @@ import {
     TaskDraft,
     TaskPatch,
     TaskQuery,
+    TaskSearchQuery,
     TaskSummary,
     Versioned,
     repeatToWire,
@@ -49,6 +50,73 @@ export class TaskGateway {
             mapTaskSummary,
         );
         return { data: response.data };
+    }
+
+    async search(
+        credentials: VikunjaCredentials,
+        query: TaskSearchQuery,
+    ): Promise<Page<TaskSummary>> {
+        const response = await this.client.requestPage(
+            credentials,
+            "/tasks",
+            {
+                s: query.query,
+                page: query.page,
+                per_page: query.perPage,
+                format: "markdown",
+            },
+            mapTaskSummary,
+        );
+        return response.data;
+    }
+
+    async linkChild(
+        credentials: VikunjaCredentials,
+        parentTaskId: number,
+        childTaskId: number,
+    ): Promise<void> {
+        this.assertId(parentTaskId, "parentTaskId");
+        this.assertId(childTaskId, "childTaskId");
+        if (parentTaskId === childTaskId)
+            throw new HttpTransportError(
+                "invalid-response",
+                "A task cannot be its own subtask",
+            );
+        await this.client.requestJson<void>(
+            credentials,
+            "POST",
+            `/tasks/${parentTaskId}/relations`,
+            {
+                body: {
+                    kind: "json",
+                    value: {
+                        other_task_id: childTaskId,
+                        relation_kind: "subtask",
+                    },
+                },
+                responseMode: "empty",
+            },
+        );
+    }
+
+    async unlinkChild(
+        credentials: VikunjaCredentials,
+        parentTaskId: number,
+        childTaskId: number,
+    ): Promise<void> {
+        this.assertId(parentTaskId, "parentTaskId");
+        this.assertId(childTaskId, "childTaskId");
+        if (parentTaskId === childTaskId)
+            throw new HttpTransportError(
+                "invalid-response",
+                "A task cannot be its own subtask",
+            );
+        await this.client.requestJson<void>(
+            credentials,
+            "DELETE",
+            `/tasks/${parentTaskId}/relations/subtask/${childTaskId}`,
+            { responseMode: "empty" },
+        );
     }
 
     async get(

@@ -197,6 +197,55 @@ describe("VikunjaDock", () => {
         expect(onCreateTask).toHaveBeenCalledTimes(1);
     });
 
+    it("renders multi-level subtasks only when expanded and keeps expansion isolated per task view", async () => {
+        const items = [
+            summary({ id: 1, title: "Parent", childTaskIds: [2] }),
+            summary({ id: 2, title: "Child", parentTaskIds: [1], childTaskIds: [3] }),
+            summary({ id: 3, title: "Grandchild", parentTaskIds: [2] }),
+        ];
+        const call = vi.fn().mockResolvedValue({
+            ok: true,
+            data: { items, total: 4, page: 1, perPage: 50 },
+        });
+        const dock = new VikunjaDock({
+            store: storeWith(call),
+            openSettings: vi.fn(),
+            i18n: dockI18n,
+        });
+        const element = document.createElement("div");
+        dock.mount(element);
+
+        await vi.waitFor(() => {
+            expect(element.querySelectorAll(".vcp-siyuan-dock__task")).toHaveLength(1);
+        });
+        expect(element.textContent).not.toContain("Child");
+        expect(element.querySelector("[data-action='load-more']")).not.toBeNull();
+        expect(element.querySelector(".vcp-siyuan-dock__footer")?.textContent)
+            .toContain(dockI18n.shownCount(3, 4));
+
+        const parentToggle = element.querySelector<HTMLButtonElement>(
+            ".vcp-siyuan-dock__task [data-action='toggle-children']",
+        );
+        expect(parentToggle?.getAttribute("aria-expanded")).toBe("false");
+        parentToggle?.click();
+        expect(element.querySelectorAll(".vcp-siyuan-dock__task")).toHaveLength(2);
+        const childRow = element.querySelector<HTMLElement>("[data-task-id='2']");
+        expect(childRow?.style.marginInlineStart).toBe("16px");
+        const childToggle = childRow?.querySelector<HTMLButtonElement>(
+            "[data-action='toggle-children']",
+        );
+        childToggle?.click();
+        expect(element.querySelectorAll(".vcp-siyuan-dock__task")).toHaveLength(3);
+        expect(element.querySelector<HTMLElement>("[data-task-id='3']")?.style.marginInlineStart)
+            .toBe("32px");
+
+        // The all-task view owns independent expansion state and begins collapsed.
+        element.querySelector<HTMLButtonElement>("[data-view='all']")?.click();
+        expect(element.querySelectorAll(".vcp-siyuan-dock__task")).toHaveLength(1);
+        expect(element.querySelector("[data-action='load-more']")).not.toBeNull();
+        dock.destroy();
+    });
+
     it("hides the create button and row interaction when no handlers are given", async () => {
         const call = vi.fn().mockResolvedValue({
             ok: true,

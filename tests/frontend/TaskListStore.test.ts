@@ -208,6 +208,8 @@ describe("TaskListStore", () => {
             reminders: [],
             repeat: { kind: "none" },
             attachments: [],
+            parentTasks: [],
+            childTasks: [],
             maxPermission: "write",
             etag: "v2",
         };
@@ -334,6 +336,8 @@ describe("TaskListStore", () => {
             reminders: [],
             repeat: { kind: "none" },
             attachments: [],
+            parentTasks: [],
+            childTasks: [],
             maxPermission: "write",
             etag: "v2",
         };

@@ -1,6 +1,6 @@
 # 本地 Vikunja + 真实 SiYuan 插件集成测试指南
 
-本文记录如何在 Windows Git Bash 中运行本地 Vikunja、启动隔离的真实 SiYuan Web 宿主、加载 VCPSiyuan 插件，并通过浏览器或 Playwright MCP 完成端到端验证。
+本文使用 Vikunja **v2.5.0** 作为可复现的最低验证基线。插件写操作要求 API v2、服务端主版本为 2 且版本 ≥ 2.5.0；该测试基线不表示所有更高 v2 版本都已实测或经过此指南验证。
 
 > 本项目的 `pnpm dev:real:web` 使用真实 SiYuan 前端和 Go Kernel，只是不启动 Electron 窗口。它不是自制的 SiYuan 模拟器。工作空间固定隔离在 `.tmp/siyuan-real/workspace`，不会使用正式 SiYuan 工作空间。
 
@@ -78,7 +78,7 @@ go build \
 
 预期包含 `Vikunja api version v2.5.0`。
 
-### 2.4 准备真实 SiYuan 宿主
+## 2.4 准备真实 SiYuan 宿主
 
 ```bash
 cd "D:/VCPHub/VCPSiyuan/examples/siyuan/app"
@@ -365,6 +365,8 @@ GET /api/v2/user   # 验证 Token 确实可用
 - 完成状态能够写回 Vikunja。
 
 ## 7. 开发修改后的验证
+
+Vikunja v2.5.0 是可复现的最低验证基线。插件写操作要求 API v2、服务端主版本为 2 且版本 ≥ v2.5.0；通过 v2.5.0 测试不代表所有更高 v2 版本都已验证。真实集成套件包含分页任务搜索以及子任务关系创建、读取、解除的检查。
 
 `pnpm dev:real:web` 与 `pnpm dev:all` 会监听并同步：
 

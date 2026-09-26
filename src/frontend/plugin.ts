@@ -30,7 +30,10 @@ import { createModalHost } from "./dialogs/modalHost.js";
 import { TaskDialogStore } from "./stores/TaskDialogStore.js";
 import { TaskDialog } from "./dialogs/TaskDialog.js";
 import type { TaskDialogI18n } from "./dialogs/TaskDialog.js";
-import { createTaskSaveOnce } from "./dialogs/taskCreateWorkflow.js";
+import {
+    createTaskSaveOnce,
+    TaskRelationFollowUpError,
+} from "./dialogs/taskCreateWorkflow.js";
 import { TaskDetail } from "../shared/task.js";
 import { TaskDetailStore } from "./stores/TaskDetailStore.js";
 import { TaskDetailView } from "./dock/TaskDetailView.js";
@@ -38,6 +41,7 @@ import { TaskListStore } from "./stores/TaskListStore.js";
 import { SummaryCache } from "./persistence/SummaryCache.js";
 import { ResourceStore } from "./stores/ResourceStore.js";
 import { AttachmentStore } from "./stores/AttachmentStore.js";
+import { TaskRelationPicker } from "./dialogs/TaskRelationPicker.js";
 import { PendingOperationStore } from "./persistence/PendingOperationStore.js";
 import { ManagementStore } from "./stores/ManagementStore.js";
 import { ProjectManagerDialog } from "./dialogs/ProjectManagerDialog.js";
@@ -99,6 +103,8 @@ export class VCPSiyuanPlugin extends Plugin {
     private linkedTaskAttachments?: AttachmentStore;
     private linkedTaskUnsubscribe?: () => void;
     private linkedTaskDetailUnsubscribe?: () => void;
+    private linkedTaskRelationModal?: { host: HTMLElement; dispose: () => void };
+    private linkedTaskRelationPicker?: TaskRelationPicker;
     private resourceUnsubscribe?: () => void;
 
     onload(): void {
@@ -199,6 +205,8 @@ export class VCPSiyuanPlugin extends Plugin {
                 complete: this.i18n.complete,
                 reopen: this.i18n.reopen,
                 openTask: this.i18n.openTask,
+                expandChildren: this.i18n.expandChildren,
+                collapseChildren: this.i18n.collapseChildren,
                 formatDate: (value) =>
                     new Intl.DateTimeFormat(undefined, {
                         dateStyle: "medium",
@@ -479,6 +487,22 @@ export class VCPSiyuanPlugin extends Plugin {
         });
     }
 
+    private openCreateChildDialog(parent: TaskDetail): void {
+        const projectId = parent.project?.id ?? parent.projectId ?? null;
+        if (!projectId || projectId <= 0) {
+            showMessage(this.i18n.projectRequired);
+            return;
+        }
+        void this.openCreateDialog({
+            blockIds: [],
+            blockSummaries: [],
+            projectId,
+            initialTitle: "",
+            childParentTaskId: parent.id,
+            onCreated: async () => {},
+        });
+    }
+
     private async readLinkedTaskCount(blockId: string): Promise<number> {
         if (!this.blockLinks) return 0;
         try {
@@ -543,6 +567,22 @@ export class VCPSiyuanPlugin extends Plugin {
                 }
                 if (attachmentStore.hasFailures())
                     throw new Error(this.i18n.attachmentPartialFailure);
+                if (request.childParentTaskId !== undefined) {
+                    const relation = await this.controller.call(
+                        "vikunja.tasks.linkChild",
+                        {
+                            parentTaskId: request.childParentTaskId,
+                            childTaskId: taskId,
+                        },
+                    );
+                    if (!relation.ok)
+                        throw new TaskRelationFollowUpError(
+                            this.i18n.childLinkAfterCreateFailed.replace(
+                                "{id}",
+                                String(taskId),
+                            ),
+                        );
+                }
                 if (!store.getBlockLink().enabled) return;
                 try {
                     await request.onCreated(taskId);
@@ -600,11 +640,41 @@ export class VCPSiyuanPlugin extends Plugin {
                 this.resourceStore?.searchMembers(projectId, ""),
             onAssigneeSearch: (projectId, query) =>
                 this.resourceStore?.searchMembers(projectId, query),
+            onRetryFollowUp: async (childTaskId) => {
+                const parentTaskId = request.childParentTaskId;
+                if (parentTaskId === undefined) return;
+                const relation = await this.controller.call("vikunja.tasks.linkChild", {
+                    parentTaskId,
+                    childTaskId,
+                });
+                if (!relation.ok)
+                    throw new Error(relation.error.message || relation.error.code);
+                void this.taskListStore?.refreshAll();
+                attachmentSubscription();
+                attachmentStore.destroy();
+                dialogRef.current?.destroy();
+                disposeHost();
+                await this.openLinkedTask(parentTaskId);
+            },
+            onOpenCreatedTask: (childTaskId) => {
+                attachmentSubscription();
+                attachmentStore.destroy();
+                dialogRef.current?.destroy();
+                disposeHost();
+                void this.openLinkedTask(childTaskId);
+            },
+            taskFollowUpFailure: request.childParentTaskId !== undefined,
             onSave: async () => {
                 await saveCreatedTask();
-                // Auto-refresh so the dock shows the new task without a manual click.
-                // The active view flashes a brief "refreshing" indicator; the other
-                // view updates silently so the task is ready when the user switches.
+                if (request.childParentTaskId !== undefined) {
+                    void this.taskListStore?.refreshAll();
+                    attachmentSubscription();
+                    attachmentStore.destroy();
+                    dialogRef.current?.destroy();
+                    disposeHost();
+                    await this.openLinkedTask(request.childParentTaskId);
+                    return;
+                }
                 void this.taskListStore?.refreshAll();
                 attachmentSubscription();
                 attachmentStore.destroy();
@@ -692,6 +762,31 @@ export class VCPSiyuanPlugin extends Plugin {
                 );
             },
             onRetry: () => void store.retry(),
+            onOpenRelated: (relatedTaskId) => void this.openLinkedTask(relatedTaskId),
+            onToggleChild: (childTaskId, done) => {
+                void store.toggleDoneForTask(childTaskId, done).then(() => {
+                    void this.taskListStore?.refreshAll();
+                });
+            },
+            onUnlinkChild: (childTaskId) => {
+                const currentDetail = store.getDetail() ?? detail;
+                const child = currentDetail.childTasks.find(
+                    (item) => item.id === childTaskId,
+                );
+                const confirmText = this.i18n.unlinkChildConfirm
+                    .replace("{id}", String(childTaskId))
+                    .replace("{title}", child?.title ?? "");
+                void this.confirmAction(confirmText).then((confirmed) => {
+                    if (!confirmed) return;
+                    void store.unlinkChild(childTaskId).then((changed) => {
+                        if (changed) void this.taskListStore?.refreshAll();
+                    });
+                });
+            },
+            onLinkChild: () =>
+                this.openTaskRelationPicker(store, store.getDetail() ?? detail),
+            onCreateChild: () =>
+                this.openCreateChildDialog(store.getDetail() ?? detail),
             attachments:
                 this.linkedTaskAttachments?.getItems() ??
                 detail.attachments.map((attachment) => ({
@@ -743,6 +838,64 @@ export class VCPSiyuanPlugin extends Plugin {
             }
         });
         this.linkedTaskView.mount(modal.host);
+    }
+
+    private openTaskRelationPicker(store: TaskDetailStore, task: TaskDetail): void {
+        this.linkedTaskRelationPicker?.destroy();
+        this.linkedTaskRelationPicker = undefined;
+        this.linkedTaskRelationModal?.dispose();
+        this.linkedTaskRelationModal = undefined;
+        const onDismiss = () => {
+            this.linkedTaskRelationPicker?.destroy();
+            this.linkedTaskRelationPicker = undefined;
+            this.linkedTaskRelationModal?.dispose();
+            this.linkedTaskRelationModal = undefined;
+        };
+        const modal = createModalHost(onDismiss, "vcp-siyuan-task-relation-picker-dialog");
+        this.linkedTaskRelationModal = modal;
+        const picker = new TaskRelationPicker({
+            taskId: task.id,
+            childTaskIds: task.childTasks.map((child) => child.id),
+            search: async (query, page, perPage) => {
+                const result = await this.controller.call("vikunja.tasks.search", {
+                    query,
+                    page,
+                    perPage,
+                });
+                if (!result.ok) throw new Error(result.error.message);
+                return result.data;
+            },
+            i18n: {
+                title: this.i18n.linkChild,
+                search: this.i18n.taskSearchPlaceholder,
+                searchAction: this.i18n.search,
+                loading: this.i18n.loading,
+                empty: this.i18n.noMatches,
+                loadMore: this.i18n.loadMore,
+                select: this.i18n.linkChild,
+                close: this.i18n.close,
+                retry: this.i18n.retry,
+                project: this.i18n.projects,
+                error: this.i18n.loadError,
+            },
+            onSelect: (child) => {
+                picker.destroy();
+                this.linkedTaskRelationPicker = undefined;
+                modal.dispose();
+                this.linkedTaskRelationModal = undefined;
+                void store.linkChild(child.id).then((changed) => {
+                    if (changed) void this.taskListStore?.refreshAll();
+                });
+            },
+            onClose: () => {
+                picker.destroy();
+                this.linkedTaskRelationPicker = undefined;
+                modal.dispose();
+                this.linkedTaskRelationModal = undefined;
+            },
+        });
+        this.linkedTaskRelationPicker = picker;
+        picker.mount(modal.host);
     }
 
     private async ensureCapabilities(): Promise<void> {
@@ -1244,6 +1397,12 @@ export class VCPSiyuanPlugin extends Plugin {
             blockUnknown: this.i18n.blockUnknown,
             blockCount: (count) =>
                 this.i18n.blockCount.replace("{count}", String(count)),
+            parents: this.i18n.parents,
+            children: this.i18n.children,
+            createChild: this.i18n.createChild,
+            linkChild: this.i18n.linkChild,
+            unlinkChild: this.i18n.unlinkChild,
+            openRelated: this.i18n.openRelated,
             permissionReadOnly: this.i18n.permissionReadOnly,
             repeatNone: this.i18n.repeatNone,
             repeatEvery: (every, unit) =>
@@ -1311,6 +1470,13 @@ export class VCPSiyuanPlugin extends Plugin {
             save: this.i18n.save,
             titleRequired: this.i18n.titleRequired,
             saveFailed: this.i18n.saveFailed,
+            childLinkAfterCreateFailed: (taskId) =>
+                this.i18n.childLinkAfterCreateFailed.replace(
+                    "{id}",
+                    String(taskId),
+                ),
+            retryFollowUp: this.i18n.retryFollowUp,
+            openCreatedTask: this.i18n.openCreatedTask,
             attachments: this.i18n.attachments,
             uploadAttachment: this.i18n.uploadAttachment,
             attachmentLimit: (value) =>
@@ -1416,6 +1582,10 @@ export class VCPSiyuanPlugin extends Plugin {
         this.linkedTaskUnsubscribe = undefined;
         this.linkedTaskDetailUnsubscribe?.();
         this.linkedTaskDetailUnsubscribe = undefined;
+        this.linkedTaskRelationPicker?.destroy();
+        this.linkedTaskRelationPicker = undefined;
+        this.linkedTaskRelationModal?.dispose();
+        this.linkedTaskRelationModal = undefined;
         this.linkedTaskAttachments?.destroy();
         this.linkedTaskAttachments = undefined;
         this.linkedTaskView?.destroy();

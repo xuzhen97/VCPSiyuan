@@ -17,6 +17,7 @@ export interface BlockCreateDialogRequest {
     blockSummaries: BlockSummary[];
     projectId: number;
     initialTitle: string;
+    childParentTaskId?: number;
     onCreated: (taskId: number) => Promise<void>;
 }
 

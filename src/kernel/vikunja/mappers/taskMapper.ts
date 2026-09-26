@@ -5,6 +5,7 @@ import {
     LabelRef,
     UserRef,
     Reminder,
+    TaskRelationRef,
     repeatFromWire,
 } from "../../../shared/task.js";
 import { HttpTransportError } from "../../http/HttpClient.js";
@@ -111,8 +112,38 @@ function reminders(value: unknown): Reminder[] {
     });
 }
 
+function directTaskRelations(
+    raw: RawRecord,
+    relation: "parenttask" | "subtask",
+): TaskRelationRef[] {
+    if (raw.related_tasks === null || raw.related_tasks === undefined) return [];
+    const relations = record(raw.related_tasks, "related_tasks");
+    const tasks = relations[relation];
+    if (tasks === undefined || tasks === null) return [];
+    if (!Array.isArray(tasks))
+        throw new HttpTransportError(
+            "invalid-response",
+            `related_tasks.${relation} must be an array`,
+        );
+    return tasks.map((value) => {
+        const task = record(value, `related_tasks.${relation} task`);
+        const projectId =
+            task.project_id === undefined || task.project_id === null
+                ? null
+                : id(task.project_id, `related_tasks.${relation}.project_id`);
+        return {
+            id: id(task.id, `related_tasks.${relation}.id`),
+            title: title(task.title, `related_tasks.${relation}.title`),
+            done: task.done === true,
+            projectId,
+        };
+    });
+}
+
 function summaryFromRaw(value: unknown): TaskSummary {
     const raw = record(value, "task");
+    const parentTasks = directTaskRelations(raw, "parenttask");
+    const childTasks = directTaskRelations(raw, "subtask");
     const projectId =
         raw.project_id === null || raw.project_id === undefined
             ? null
@@ -151,6 +182,8 @@ function summaryFromRaw(value: unknown): TaskSummary {
                   ? raw.updated_at
                   : "",
         projectId,
+        parentTaskIds: parentTasks.map((task) => task.id),
+        childTaskIds: childTasks.map((task) => task.id),
         description:
             typeof raw.description === "string" ? raw.description : undefined,
     };
@@ -165,6 +198,8 @@ export function mapTaskDetail(value: unknown): TaskDetail {
     const summary = summaryFromRaw(raw);
     return {
         ...summary,
+        parentTasks: directTaskRelations(raw, "parenttask"),
+        childTasks: directTaskRelations(raw, "subtask"),
         descriptionMarkdown:
             typeof raw.description === "string" ? raw.description : "",
         reminders: reminders(raw.reminders),

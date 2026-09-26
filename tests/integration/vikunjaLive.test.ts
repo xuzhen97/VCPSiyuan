@@ -9,6 +9,7 @@ import { AttachmentGateway } from "../../src/kernel/vikunja/AttachmentGateway.js
 import { ConnectionService } from "../../src/kernel/services/ConnectionService.js";
 import { TaskQueryService } from "../../src/kernel/services/TaskQueryService.js";
 import { TaskCommandService } from "../../src/kernel/services/TaskCommandService.js";
+import { TaskRelationService } from "../../src/kernel/services/TaskRelationService.js";
 import { ProjectService } from "../../src/kernel/services/ProjectService.js";
 import { LabelService } from "../../src/kernel/services/LabelService.js";
 import { UserService } from "../../src/kernel/services/UserService.js";
@@ -70,6 +71,7 @@ function buildStack() {
         }),
         tasks: new TaskQueryService(taskGateway),
         commands: new TaskCommandService(taskGateway, { writesAllowed: true }),
+        relations: new TaskRelationService(taskGateway, { writesAllowed: true }),
         projects: new ProjectService(projectGateway, taskGateway, {
             writesAllowed: true,
         }),
@@ -187,6 +189,118 @@ describe.skipIf(!live)("Vikunja v2.5.0 live integration", () => {
         if (!patched.ok) return;
         expect(patched.data.title).toBe(`live task patched ${suffix}`);
         expect(patched.data.priority).toBe(5);
+    });
+
+    it("searches tasks through the paginated v2 task search endpoint", async () => {
+        const created = await stack.commands.create(credentials, {
+            draft: {
+                title: `live searchable subtask ${suffix}`,
+                projectId: 1,
+                labelIds: [],
+                assigneeIds: [],
+                startAt: null,
+                dueAt: null,
+                priority: 0,
+                descriptionMarkdown: "",
+                reminders: [],
+                repeat: { kind: "none" },
+            },
+        });
+        expect(created.ok).toBe(true);
+        if (!created.ok) return;
+        try {
+            const result = await stack.tasks.search(credentials, {
+                query: `live searchable subtask ${suffix}`,
+                page: 1,
+                perPage: 10,
+            });
+            expect(result.ok).toBe(true);
+            if (!result.ok) return;
+            expect(result.data.items.map((task) => task.id)).toContain(
+                created.data.id,
+            );
+            expect(stack.shim.log.some((entry) =>
+                entry.url.includes("/api/v2/tasks?") &&
+                entry.url.includes("s=live+searchable+subtask"),
+            )).toBe(true);
+        } finally {
+            await stack.taskGateway.delete(credentials, created.data.id);
+        }
+    });
+
+    it("creates, links, and unlinks a subtask without deleting either task", async () => {
+        const parent = await stack.commands.create(credentials, {
+            draft: {
+                title: `live subtask parent ${suffix}`,
+                projectId: 1,
+                labelIds: [],
+                assigneeIds: [],
+                startAt: null,
+                dueAt: null,
+                priority: 0,
+                descriptionMarkdown: "",
+                reminders: [],
+                repeat: { kind: "none" },
+            },
+        });
+        expect(parent.ok).toBe(true);
+        if (!parent.ok) return;
+        const child = await stack.commands.create(credentials, {
+            draft: {
+                title: `live subtask child ${suffix}`,
+                projectId: 1,
+                labelIds: [],
+                assigneeIds: [],
+                startAt: null,
+                dueAt: null,
+                priority: 0,
+                descriptionMarkdown: "",
+                reminders: [],
+                repeat: { kind: "none" },
+            },
+        });
+        expect(child.ok).toBe(true);
+        if (!child.ok) {
+            await stack.taskGateway.delete(credentials, parent.data.id);
+            return;
+        }
+        try {
+            const linked = await stack.relations.link(credentials, {
+                parentTaskId: parent.data.id,
+                childTaskId: child.data.id,
+            });
+            expect(linked).toMatchObject({ ok: true });
+            if (!linked.ok) return;
+            expect(linked.data.childTasks).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ id: child.data.id }),
+                ]),
+            );
+            expect(linked.data.childTaskIds).toContain(child.data.id);
+            const childDetail = await stack.taskGateway.get(credentials, child.data.id);
+            expect(childDetail.value.parentTasks).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ id: parent.data.id }),
+                ]),
+            );
+
+            const unlinked = await stack.relations.unlink(credentials, {
+                parentTaskId: parent.data.id,
+                childTaskId: child.data.id,
+            });
+            expect(unlinked).toMatchObject({ ok: true });
+            if (!unlinked.ok) return;
+            expect(unlinked.data.childTaskIds).not.toContain(child.data.id);
+            expect(stack.shim.log.some((entry) => entry.method === "DELETE" &&
+                entry.url.includes(`/tasks/${parent.data.id}/relations/subtask/${child.data.id}`))).toBe(true);
+
+            const survivingChild = await stack.taskGateway.get(credentials, child.data.id);
+            expect(survivingChild.value.id).toBe(child.data.id);
+            expect(survivingChild.value.title).toBe(`live subtask child ${suffix}`);
+        } finally {
+            await stack.taskGateway.delete(credentials, child.data.id);
+            await stack.taskGateway.delete(credentials, parent.data.id);
+        }
     });
 
     it("round-trips an editable repeat rule as seconds and an integer mode", async () => {

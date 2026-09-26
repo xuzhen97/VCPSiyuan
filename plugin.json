@@ -2,7 +2,7 @@
   "name": "VCPSiyuan",
   "author": "xuzhen97",
   "url": "https://github.com/xuzhen97/VCPSiyuan",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "minAppVersion": "3.8.2",
   "kernels": [
     "windows",

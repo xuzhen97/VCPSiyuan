@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TaskDetailView } from "../../src/frontend/dock/TaskDetailView.js";
 import { TaskDetail } from "../../src/shared/task.js";
 import { taskDetailViewI18n } from "../helpers/pluginI18n.js";
@@ -21,6 +21,8 @@ const value: TaskDetail = {
     reminders: [],
     repeat: { kind: "none" },
     attachments: [],
+    parentTasks: [],
+    childTasks: [],
     maxPermission: "write",
 };
 
@@ -58,6 +60,45 @@ describe("TaskDetailView", () => {
         expect(
             element.querySelector(".vcp-siyuan-task-detail__meta")?.textContent,
         ).toBe(`${taskDetailViewI18n.projectPrefix}2`);
+    });
+
+    it("renders direct child controls without deleting the child and shows read-only links", () => {
+        const { onToggleChild, onUnlinkChild, onOpenRelated } = {
+            onToggleChild: vi.fn(),
+            onUnlinkChild: vi.fn(),
+            onOpenRelated: vi.fn(),
+        };
+        const element = document.createElement("div");
+        new TaskDetailView({
+            task: {
+                ...value,
+                parentTasks: [{ id: 9, title: "Parent", done: false, projectId: 2 }],
+                childTasks: [{ id: 33, title: "Child", done: false, projectId: 7 }],
+                maxPermission: "read",
+            },
+            i18n: taskDetailViewI18n,
+            onBack: () => {},
+            onComplete: () => {},
+            onEdit: () => {},
+            onDelete: () => { throw new Error("must not delete task"); },
+            onOpenRelated,
+            onToggleChild,
+            onUnlinkChild,
+        }).mount(element);
+
+        expect(element.textContent).toContain("Parent");
+        expect(element.textContent).toContain("Child");
+        element.querySelector<HTMLButtonElement>('[data-action="open-related-9"]')!.click();
+        expect(onOpenRelated).toHaveBeenCalledWith(9);
+        const complete = element.querySelector<HTMLInputElement>("[data-action='complete-child-33']")!;
+        expect(complete.disabled).toBe(true);
+        const unlink = element.querySelector<HTMLButtonElement>("[data-action='unlink-child-33']")!;
+        expect(unlink.disabled).toBe(true);
+        const childRow = element.querySelector<HTMLElement>("[data-task-id='33']")!;
+        expect(childRow.classList.contains("vcp-siyuan-task-detail__relation--child")).toBe(true);
+        expect(complete.classList.contains("vcp-siyuan-task-detail__relation-complete")).toBe(true);
+        expect(childRow.querySelector(".vcp-siyuan-task-detail__relation-actions")?.children).toHaveLength(2);
+        expect(element.querySelector("[data-task-id='33']")).not.toBeNull();
     });
 
     it("disables write actions for read-only tasks", () => {

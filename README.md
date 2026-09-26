@@ -1,10 +1,10 @@
 # VCPSiyuan (VCP for SiYuan)
 
-VCPSiyuan connects SiYuan Note with **Vikunja v2.5.0 API v2**. It provides a native RightTop task workbench with the Inbox, All Tasks, and Projects & Labels tabs, task details, create/edit/complete/delete, and SiYuan Block links.
+VCPSiyuan connects SiYuan Note with **Vikunja API v2**. Task writes require a server version in major version 2 at or above **v2.5.0**. Version 2.5.0 is the minimum verified baseline, not a claim that every later v2 release has been tested. The plugin provides a native RightTop task workbench with the Inbox, All Tasks, and Projects & Labels tabs, nested subtask expansion, task details, and subtask creation/linking/completion/unlinking.
 
 ## Supported boundary
 
-- Only Vikunja **v2.5.0** and API **v2** are supported. The plugin accepts the instance **Origin** (for example `https://tasks.example.com`) and appends `/api/v2` internally. API v1 and custom API paths are not supported for new configuration; the old `/api/v1` setting is normalized only during migration.
+- Task writes require Vikunja API **v2**, server major version **2**, and version **v2.5.0 or later**. The plugin accepts the instance **Origin** (for example `https://tasks.example.com`) and appends `/api/v2` internally. **v2.5.0 is the minimum verified baseline, not an assertion that all later v2 releases have been tested.** API v1 and custom API paths are not supported for new configuration; the old `/api/v1` setting is normalized only during migration.
 - The API token is read from SiYuan Secrets for each operation. It is not persisted, cached, echoed, or written to logs.
 - External requests stay inside the Kernel and use SiYuan's `/api/network/forwardProxy` boundary. The frontend never sends an external URL directly to `siyuan.client.fetch()`.
 - Offline mode exposes only timestamped minimum task summaries. Remote writes are disabled and no offline write queue is created.
@@ -20,7 +20,8 @@ VCPSiyuan connects SiYuan Note with **Vikunja v2.5.0 API v2**. It provides a nat
 
 ## Task and resource behavior
 
-- Task writes use optimistic version checks and report conflicts rather than overwriting a newer remote task. Vikunja v2.5.0 advertises `concurrent_writes: false` and stamps `updated` — and the ETag derived from it — at one-second resolution, so a save is reliably rejected as stale when the remote task changed at least a second earlier; two writes inside the same second are indistinguishable to the server itself.
+- Task and subtask relationships are shown in task details. The Dock keeps Vikunja's flat server-side filtering and pagination, then nests only loaded, filtered tasks; expand/collapse does not change server totals or page boundaries. Unlinking removes only the relationship, never the task. New subtasks default to their parent's project, which can be changed before saving. If creation succeeds but linking fails, the created task ID is retained and recovery retries only the link.
+- Task writes use optimistic version checks and report conflicts rather than overwriting a newer remote task. The v2.5.0 validation baseline advertises `concurrent_writes: false` and stamps `updated` — and the ETag derived from it — at one-second resolution, so a save can be rejected as stale when the remote task changed at least a second earlier; two writes inside the same second are indistinguishable to the server itself.
 - Block links are stored in the `custom-vikunja-task-links` Attribute as versioned JSON (`{"v":1,"taskIds":[...]}`). The local Task-to-Block reverse index is disposable and rebuildable, and a full rebuild runs only from the explicit **Repair Links** action. The plugin does not rewrite Block body content, and uninstall preserves Block Attributes.
 - Offline mode shows the timestamped summary snapshot and disables remote writes.
 

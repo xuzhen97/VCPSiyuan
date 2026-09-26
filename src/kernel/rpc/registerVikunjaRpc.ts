@@ -8,6 +8,7 @@ import { ProjectService } from "../services/ProjectService.js";
 import { LabelService } from "../services/LabelService.js";
 import { UserService } from "../services/UserService.js";
 import { AttachmentService } from "../services/AttachmentService.js";
+import { TaskRelationService } from "../services/TaskRelationService.js";
 import { toServiceError } from "../services/serviceError.js";
 
 export interface IRpcBinder {
@@ -27,6 +28,7 @@ export interface VikunjaRpcServices {
     labels: LabelService;
     users: UserService;
     attachments: AttachmentService;
+    relations: TaskRelationService;
 }
 
 interface AuthenticatedRpcEnvelope<K extends VikunjaRpcMethod> {
@@ -44,6 +46,9 @@ type Binding = {
 const RPC_DESCRIPTIONS: Partial<Record<VikunjaRpcMethod, string>> = {
     "vikunja.connection.test": "Tests the configured Vikunja v2.5.0 connection",
     "vikunja.tasks.query": "Queries one paginated Vikunja task view",
+    "vikunja.tasks.search": "Searches paginated Vikunja tasks by title",
+    "vikunja.tasks.linkChild": "Creates a Vikunja parent-child task relation",
+    "vikunja.tasks.unlinkChild": "Removes a Vikunja parent-child task relation",
     "vikunja.tasks.get": "Loads one typed Vikunja task detail",
     "vikunja.tasks.create": "Creates one Vikunja task",
     "vikunja.tasks.patch": "Patches one Vikunja task",
@@ -60,6 +65,9 @@ export async function registerVikunjaRpc(
     const bindings: Binding[] = [
         bind("vikunja.connection.test", services, "connection", "test"),
         bind("vikunja.tasks.query", services, "tasks", "query"),
+        bind("vikunja.tasks.search", services, "tasks", "search"),
+        bind("vikunja.tasks.linkChild", services, "relations", "link"),
+        bind("vikunja.tasks.unlinkChild", services, "relations", "unlink"),
         bind("vikunja.tasks.get", services, "commands", "get"),
         bind("vikunja.tasks.create", services, "commands", "create"),
         bind("vikunja.tasks.patch", services, "commands", "update"),

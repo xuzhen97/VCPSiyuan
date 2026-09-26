@@ -5,7 +5,7 @@
     appearance: none;
     flex: 0 0 auto;
     box-sizing: border-box;
-    width: 18px;
+    width: 18px !important;
     min-width: 18px;
     height: 18px;
     margin: 0;
@@ -344,7 +344,7 @@
     &__task {
         position: relative;
         display: grid;
-        grid-template-columns: 22px minmax(0, 1fr) auto;
+        grid-template-columns: 54px minmax(0, 1fr) auto;
         align-items: start;
         gap: 6px;
         width: 100%;
@@ -352,7 +352,7 @@
         margin: 2px 0;
         // A real border keeps the priority cue attached to the row; the old
         // detached pseudo element floated beside the row's own padding.
-        padding: 8px 5px 8px 8px;
+        padding: 9px 6px 9px 10px;
         border: 0;
         border-left: 2px solid var(--b3-border-color);
         border-radius: 4px;
@@ -380,6 +380,37 @@
         }
     }
 
+    &__task-controls {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 5px;
+        padding-top: 0;
+    }
+
+    &__task-expand {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        min-width: 28px;
+        margin: -5px 0 -5px -5px;
+        padding: 0;
+        border-radius: 6px;
+        color: var(--b3-theme-on-surface-light);
+        font-size: 17px;
+        line-height: 1;
+        transition: background-color .15s ease, color .15s ease;
+
+        &:hover,
+        &:focus-visible {
+            background: color-mix(in srgb, var(--b3-theme-primary) 12%, transparent);
+            color: var(--b3-theme-primary);
+        }
+    }
+
     &__task-complete {
         // 18px against a 17.55px first title line, so the two centres line up
         // without a magic offset.
@@ -392,16 +423,16 @@
 
     &__task-title {
         overflow-wrap: anywhere;
-        font-size: 13px;
+        font-size: 13.5px;
         font-weight: 500;
-        line-height: 1.35;
+        line-height: 1.4;
     }
 
     &__task-meta {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px 8px;
-        margin-top: 3px;
+        gap: 5px 9px;
+        margin-top: 5px;
         color: var(--b3-theme-on-surface-light);
         font-size: 11px;
         line-height: 1.35;
@@ -456,6 +487,99 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+
+    &__actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 2px 0;
+
+        > button {
+            min-height: 32px;
+        }
+    }
+
+    &__status {
+        align-self: flex-start;
+        padding: 4px 8px;
+        border-radius: 5px;
+        background: var(--b3-theme-surface);
+        color: var(--b3-theme-on-surface-light);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    &__relations {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+
+        h3 {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        > p {
+            margin: 0;
+            color: var(--b3-theme-on-surface-light);
+            font-size: 12px;
+        }
+
+        > button {
+            align-self: flex-start;
+            min-height: 30px;
+        }
+    }
+
+    &__relation {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 5px 7px;
+        border: 1px solid color-mix(in srgb, var(--b3-border-color) 72%, transparent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--b3-theme-surface) 55%, transparent);
+
+        > span {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            line-height: 1.45;
+        }
+
+        &--child {
+            grid-template-columns: 20px minmax(0, 1fr) auto;
+            column-gap: 8px;
+        }
+    }
+
+    &__relation-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 3px;
+
+        button {
+            min-height: 28px;
+            padding: 3px 6px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        &__relation--child {
+            grid-template-columns: 20px minmax(0, 1fr);
+            row-gap: 3px;
+        }
+
+        &__relation-actions {
+            grid-column: 2;
+            justify-content: flex-start;
+        }
+    }
 
     &__header {
         display: flex;

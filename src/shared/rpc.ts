@@ -20,6 +20,7 @@ import {
     TaskDraft,
     TaskPatch,
     TaskQuery,
+    TaskSearchQuery,
     TaskSummary,
     UserRef,
     Versioned,
@@ -71,6 +72,10 @@ export interface PatchTaskRequest {
     labels?: { before: number[]; after: number[] };
     assignees?: { before: number[]; after: number[] };
 }
+export interface TaskRelationRequest {
+    parentTaskId: number;
+    childTaskId: number;
+}
 export interface DeleteTaskRequest {
     taskId: number;
     expectedTitle: string;
@@ -112,6 +117,9 @@ export interface UploadRequest {
 export interface VikunjaRpcMap {
     "vikunja.connection.test": RpcMethod<ConnectionRequest, ConnectionInfo>;
     "vikunja.tasks.query": RpcMethod<TaskQuery, Page<TaskSummary>>;
+    "vikunja.tasks.search": RpcMethod<TaskSearchQuery, Page<TaskSummary>>;
+    "vikunja.tasks.linkChild": RpcMethod<TaskRelationRequest, TaskDetail>;
+    "vikunja.tasks.unlinkChild": RpcMethod<TaskRelationRequest, TaskDetail>;
     "vikunja.tasks.get": RpcMethod<GetTaskRequest, Versioned<TaskDetail>>;
     "vikunja.tasks.create": RpcMethod<CreateTaskRequest, TaskDetail>;
     "vikunja.tasks.patch": RpcMethod<PatchTaskRequest, TaskDetail>;

@@ -82,6 +82,8 @@ export const dockI18n: VikunjaDockI18n = {
  attachmentCount: (count) => fill(t("attachmentCount"), { count }),
  blockCount: (count) => fill(t("blockCount"), { count }),
  projectPrefix: t("projectPrefix"),
+ expandChildren: t("expandChildren"),
+ collapseChildren: t("collapseChildren"),
  priorityLabel: (priority) => fill(t("priorityLabel"), { value: priority }),
 };
 
@@ -118,6 +120,10 @@ export const taskDialogI18n: TaskDialogI18n = {
  save: t("save"),
  titleRequired: t("titleRequired"),
  saveFailed: t("saveFailed"),
+ childLinkAfterCreateFailed: (taskId) =>
+  fill(t("childLinkAfterCreateFailed"), { id: taskId }),
+ retryFollowUp: t("retryFollowUp"),
+ openCreatedTask: t("openCreatedTask"),
  attachments: t("attachments"),
  uploadAttachment: t("uploadAttachment"),
  attachmentLimit: (value) => fill(t("attachmentLimitLabel"), { value }),
@@ -165,6 +171,12 @@ export const taskDetailViewI18n: TaskDetailViewI18n = {
  retryLoad: t("retryLoad"),
  blockOpen: t("blockOpen"),
  blockUnknown: t("blockUnknown"),
+ parents: t("parents"),
+ children: t("children"),
+ createChild: t("createChild"),
+ linkChild: t("linkChild"),
+ unlinkChild: t("unlinkChild"),
+ openRelated: t("openRelated"),
  blockCount: (count) => fill(t("blockCount"), { count }),
  permissionReadOnly: t("permissionReadOnly"),
  repeatNone: t("repeatNone"),

@@ -109,6 +109,50 @@ const taskWire = {
 };
 
 describe("Vikunja v2.5.0 resource gateways", () => {
+    it("creates and removes a parent-child relation with the v2 contract", async () => {
+        const client = new FakeClient();
+        const gateway = new TaskGateway(client as never);
+
+        await gateway.linkChild(credentials, 12, 33);
+        await gateway.unlinkChild(credentials, 12, 33);
+
+        expect(
+            client.requests.map(({ method, path }) => `${method} ${path}`),
+        ).toEqual([
+            "POST /tasks/12/relations",
+            "DELETE /tasks/12/relations/subtask/33",
+        ]);
+        expect(client.requests[0].options?.body).toEqual({
+            kind: "json",
+            value: { other_task_id: 33, relation_kind: "subtask" },
+        });
+    });
+
+    it("searches tasks using the server-side paginated title query", async () => {
+        const client = new FakeClient();
+        client.responses.push({
+            items: [taskWire],
+            total: 1,
+            page: 2,
+            per_page: 10,
+        });
+        const gateway = new TaskGateway(client as never);
+        const result = await gateway.search(credentials, {
+            query: "needle",
+            page: 2,
+            perPage: 10,
+        });
+
+        expect(result.items[0].id).toBe(12);
+        expect(client.requests[0]).toMatchObject({
+            method: "GET",
+            path: "/tasks",
+            options: {
+                query: { s: "needle", page: 2, per_page: 10, format: "markdown" },
+            },
+        });
+    });
+
     it("queries all tasks with OR within resources and AND across resources", async () => {
         const client = new FakeClient();
         client.responses.push({

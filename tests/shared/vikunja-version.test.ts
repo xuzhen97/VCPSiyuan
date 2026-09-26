@@ -24,7 +24,8 @@ describe("isWriteCapableVersion", () => {
         expect(isWriteCapableVersion("v2.5.0")).toBe(true);
         expect(isWriteCapableVersion("v2.5.1")).toBe(true);
         expect(isWriteCapableVersion("v2.6.0")).toBe(true);
-        expect(isWriteCapableVersion("v3.0.0")).toBe(true);
+        expect(isWriteCapableVersion("v2.99.99")).toBe(true);
+        expect(isWriteCapableVersion("v3.0.0")).toBe(false);
     });
 
     it("rejects older versions", () => {
@@ -36,6 +37,7 @@ describe("isWriteCapableVersion", () => {
     it("trusts a local dev build and denies unknown values", () => {
         expect(isWriteCapableVersion("dev")).toBe(true);
         expect(isWriteCapableVersion("DEV")).toBe(true);
+        expect(isWriteCapableVersion("devil")).toBe(false);
         expect(isWriteCapableVersion("")).toBe(false);
         expect(isWriteCapableVersion(undefined)).toBe(false);
         expect(isWriteCapableVersion("1.2")).toBe(false);

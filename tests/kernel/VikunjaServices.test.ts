@@ -3,6 +3,7 @@ import { AttachmentService } from "../../src/kernel/services/AttachmentService.j
 import { ConnectionService } from "../../src/kernel/services/ConnectionService.js";
 import { TaskCommandService } from "../../src/kernel/services/TaskCommandService.js";
 import { TaskQueryService } from "../../src/kernel/services/TaskQueryService.js";
+import { TaskRelationService } from "../../src/kernel/services/TaskRelationService.js";
 import { HttpTransportError } from "../../src/kernel/http/HttpClient.js";
 
 const credentials = {
@@ -134,6 +135,63 @@ describe("Vikunja application services", () => {
             error: { code: "VALIDATION_ERROR" },
         });
         expect(gateway.query).not.toHaveBeenCalled();
+    });
+
+    it("validates task title search and delegates valid paginated search", async () => {
+        const page = { items: [], total: 0, page: 2, perPage: 10 };
+        const gateway = { search: vi.fn().mockResolvedValue(page) };
+        const service = new TaskQueryService(gateway as never);
+
+        expect(
+            await service.search(credentials, { query: "   ", page: 1, perPage: 10 }),
+        ).toMatchObject({ ok: false, error: { code: "VALIDATION_ERROR" } });
+        expect(
+            await service.search(credentials, { query: "x".repeat(201), page: 1, perPage: 10 }),
+        ).toMatchObject({ ok: false, error: { code: "VALIDATION_ERROR" } });
+        expect(
+            await service.search(credentials, { query: "needle", page: 0, perPage: 10 }),
+        ).toMatchObject({ ok: false, error: { code: "VALIDATION_ERROR" } });
+        expect(gateway.search).not.toHaveBeenCalled();
+
+        await expect(
+            service.search(credentials, { query: "needle", page: 2, perPage: 10 }),
+        ).resolves.toEqual({ ok: true, data: page });
+        expect(gateway.search).toHaveBeenCalledWith(credentials, {
+            query: "needle", page: 2, perPage: 10,
+        });
+    });
+
+    it("allows task relation writes only with permission and valid distinct IDs", async () => {
+        const detail = { id: 12, title: "Parent", parentTasks: [], childTasks: [] };
+        const gateway = {
+            linkChild: vi.fn().mockResolvedValue(undefined),
+            unlinkChild: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue({ value: detail, etag: "v2", updatedAt: "v2" }),
+        };
+        const readOnly = new TaskRelationService(gateway as never, { writesAllowed: false });
+        expect(await readOnly.link(credentials, { parentTaskId: 12, childTaskId: 33 }))
+            .toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+        expect(gateway.linkChild).not.toHaveBeenCalled();
+
+        const service = new TaskRelationService(gateway as never, { writesAllowed: true });
+        for (const request of [
+            { parentTaskId: 0, childTaskId: 33 },
+            { parentTaskId: 12, childTaskId: 12 },
+            { parentTaskId: 12, childTaskId: Number.MAX_SAFE_INTEGER + 1 },
+        ]) {
+            expect(await service.link(credentials, request)).toMatchObject({
+                ok: false, error: { code: "VALIDATION_ERROR" },
+            });
+        }
+        expect(gateway.linkChild).not.toHaveBeenCalled();
+
+        expect(await service.link(credentials, { parentTaskId: 12, childTaskId: 33 }))
+            .toEqual({ ok: true, data: detail });
+        expect(gateway.linkChild).toHaveBeenCalledWith(credentials, 12, 33);
+        expect(gateway.get).toHaveBeenCalledWith(credentials, 12);
+        expect(await service.unlink(credentials, { parentTaskId: 12, childTaskId: 33 }))
+            .toEqual({ ok: true, data: detail });
+        expect(gateway.unlinkChild).toHaveBeenCalledWith(credentials, 12, 33);
     });
 
     it("returns ATTACHMENTS_DISABLED without calling the gateway", async () => {

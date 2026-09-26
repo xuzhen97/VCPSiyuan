@@ -23,6 +23,8 @@ const detail: TaskDetail = {
         raw: { mode: "monthly" },
     },
     attachments: [],
+    parentTasks: [],
+    childTasks: [],
     maxPermission: "write",
     etag: '"v1"',
 };

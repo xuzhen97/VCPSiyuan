@@ -9,6 +9,7 @@ import {
     MultiSelectFilterElement,
     MultiSelectOption,
 } from "../dock/MultiSelectFilter.js";
+import { TaskFollowUpError } from "./taskCreateWorkflow.js";
 
 export interface TaskDialogI18n {
     titleLabel: string;
@@ -43,11 +44,14 @@ export interface TaskDialogI18n {
     save: string;
     titleRequired: string;
     saveFailed: string;
+    childLinkAfterCreateFailed: (taskId: number) => string;
     attachments: string;
     uploadAttachment: string;
     attachmentLimit: (value: string) => string;
     attachmentsDisabled: string;
     noAttachments: string;
+    retryFollowUp: string;
+    openCreatedTask: string;
     attachmentList: ConstructorParameters<typeof AttachmentList>[0]["i18n"];
 }
 
@@ -70,6 +74,9 @@ export interface TaskDialogOptions {
         draft: ReturnType<TaskDialogStore["getDraft"]>,
     ) => boolean | void | Promise<boolean | void>;
     onClose: () => void;
+    onRetryFollowUp?: (taskId: number) => void | Promise<void>;
+    onOpenCreatedTask?: (taskId: number) => void;
+    taskFollowUpFailure?: boolean;
     /**
      * Consulted before discarding a dirty draft. May be asynchronous so the host
      * can show its own native confirmation dialog.
@@ -105,6 +112,9 @@ export class TaskDialog {
         onReload: () => void | Promise<void>;
         onReview: () => void | Promise<void>;
     };
+    private createdTaskId?: number;
+    private followUpFailed = false;
+    private followUpRetryError?: string;
 
     constructor(options: TaskDialogOptions) {
         this.options = options;
@@ -130,7 +140,11 @@ export class TaskDialog {
      * after the answer is known so callers can await dismissal.
      */
     async close(): Promise<void> {
-        if (this.options.store.isDirty() && this.options.confirmDiscard) {
+        if (this.followUpFailed || !this.options.store.isDirty()) {
+            this.options.onClose();
+            return;
+        }
+        if (this.options.confirmDiscard) {
             const discard = await this.options.confirmDiscard();
             if (!discard) return;
         }
@@ -229,6 +243,46 @@ export class TaskDialog {
         }
         const store = this.options.store;
         const draft = store.getDraft();
+        if (this.followUpFailed) {
+            const notice = document.createElement("div");
+            notice.className = "vcp-siyuan-task-dialog__error";
+            notice.setAttribute("role", "alert");
+            notice.textContent = i18n.childLinkAfterCreateFailed(
+                this.createdTaskId ?? 0,
+            );
+            if (this.followUpRetryError) {
+                const retryError = document.createElement("p");
+                retryError.textContent = this.followUpRetryError;
+                retryError.setAttribute("role", "status");
+                notice.append(retryError);
+            }
+            const retryLink = document.createElement("button");
+            retryLink.type = "button";
+            retryLink.dataset.action = "retry-follow-up";
+            retryLink.textContent = i18n.retryFollowUp;
+            retryLink.addEventListener("click", () => {
+                retryLink.disabled = true;
+                void Promise.resolve(this.options.onRetryFollowUp?.(this.createdTaskId!))
+                    .then(() => this.options.onClose())
+                    .catch((cause: unknown) => {
+                        this.followUpRetryError =
+                            cause instanceof Error ? cause.message : i18n.saveFailed;
+                        this.render();
+                    });
+            });
+            const openCreated = document.createElement("button");
+            openCreated.type = "button";
+            openCreated.dataset.action = "open-created-task";
+            openCreated.textContent = i18n.openCreatedTask;
+            openCreated.addEventListener("click", () => {
+                this.options.onOpenCreatedTask?.(this.createdTaskId!);
+            });
+            notice.append(retryLink, openCreated);
+            form.append(notice);
+            this.container.append(form);
+            return;
+        }
+
         if (this.options.assignees)
             store.setAvailableAssignees(this.options.assignees);
 
@@ -518,6 +572,18 @@ export class TaskDialog {
             void Promise.resolve()
                 .then(() => this.options.onSave(currentDraft))
                 .catch((cause: unknown) => {
+                    if (
+                        cause instanceof TaskFollowUpError &&
+                        cause.kind === "relation" &&
+                        this.options.taskFollowUpFailure
+                    ) {
+                        this.createdTaskId = cause.taskId;
+                        this.followUpFailed = true;
+                        this.followUpRetryError = undefined;
+                        save.disabled = true;
+                        this.render();
+                        return;
+                    }
                     save.disabled = false;
                     error.textContent =
                         cause instanceof Error
@@ -525,6 +591,11 @@ export class TaskDialog {
                             : i18n.saveFailed;
                 });
         });
+
+        if (this.followUpFailed) {
+            this.container.append(form);
+            return;
+        }
 
         this.container.append(form);
     }

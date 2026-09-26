@@ -7,6 +7,7 @@ import {
     MultiSelectOption,
 } from "./MultiSelectFilter.js";
 import { TaskRowI18n, createTaskRow } from "./TaskRow.js";
+import { buildTaskTree } from "./taskTree.js";
 
 export type DockView = TaskView | "resources";
 
@@ -37,6 +38,8 @@ export interface VikunjaDockI18n extends TaskRowI18n {
     resourcesLoading: string;
     resourcesError: string;
     retry: string;
+    expandChildren: string;
+    collapseChildren: string;
 }
 
 export interface VikunjaDockOptions {
@@ -71,7 +74,6 @@ export class VikunjaDock {
     private readonly renderResourceManagement?: (
         container: HTMLElement,
     ) => (() => void) | void;
-    private readonly now: () => Date;
     private readonly i18n: VikunjaDockI18n;
     private readonly unsubscribeStore: () => void;
     private container?: HTMLElement;
@@ -80,6 +82,10 @@ export class VikunjaDock {
     private multiSelects: MultiSelectFilterElement[] = [];
     private resourceDisposer?: () => void;
     private resourcesLoaded = false;
+    private readonly expandedByView = new Map<TaskView, Set<number>>([
+        ["inbox", new Set()],
+        ["all", new Set()],
+    ]);
 
     constructor(options: VikunjaDockOptions) {
         this.store = options.store;
@@ -93,9 +99,11 @@ export class VikunjaDock {
         this.resourceError = options.resourceError ?? (() => undefined);
         this.retryResources = options.retryResources;
         this.renderResourceManagement = options.renderResourceManagement;
-        this.now = options.now ?? (() => new Date());
         this.i18n = options.i18n;
-        this.unsubscribeStore = this.store.subscribe(() => this.render());
+        this.unsubscribeStore = this.store.subscribe(() => {
+            this.pruneExpansion();
+            this.render();
+        });
     }
 
     mount(element: HTMLElement): void {
@@ -348,15 +356,42 @@ export class VikunjaDock {
         } else {
             const rows = document.createElement("div");
             rows.className = "vcp-siyuan-dock__groups";
-            for (const task of items) {
-                rows.append(
-                    createTaskRow(task, this.i18n, {
+            const taskById = new Map(items.map((task) => [task.id, task]));
+            const expanded = this.expandedByView.get(view)!;
+            const tree = buildTaskTree(items);
+            const renderTree = (
+                nodes: ReturnType<typeof buildTaskTree>,
+                depth: number,
+                ancestors: Set<number>,
+            ): void => {
+                for (const node of nodes) {
+                    const task = taskById.get(node.task.id);
+                    if (!task || ancestors.has(task.id)) continue;
+                    const descendants = node.children;
+                    const row = createTaskRow(task, this.i18n, {
                         onOpen: this.onOpenTask,
                         onToggleDone: (taskId, done) => void this.store.toggleDone(taskId, done),
                         canComplete: !this.isWriteDisabled(),
-                    }),
-                );
-            }
+                        hasChildren: descendants.length > 0,
+                        expanded: expanded.has(task.id),
+                        onToggleExpand: descendants.length > 0
+                            ? (isExpanded) => {
+                                  if (isExpanded) expanded.add(task.id);
+                                  else expanded.delete(task.id);
+                                  this.render();
+                              }
+                            : undefined,
+                    });
+                    row.style.marginInlineStart = `${Math.min(depth, 8) * 16}px`;
+                    rows.append(row);
+                    if (expanded.has(task.id)) {
+                        const nextAncestors = new Set(ancestors);
+                        nextAncestors.add(task.id);
+                        renderTree(descendants, depth + 1, nextAncestors);
+                    }
+                }
+            };
+            renderTree(tree, 0, new Set());
             content.append(rows);
         }
         const state = this.store.getState(view);
@@ -369,6 +404,17 @@ export class VikunjaDock {
             loadMore.disabled = this.store.isLoadingMore();
             loadMore.addEventListener("click", () => void this.store.loadNextPage());
             content.append(loadMore);
+        }
+    }
+
+    private pruneExpansion(): void {
+        for (const view of ["inbox", "all"] as const) {
+            const visibleIds = new Set(
+                this.store.getVisibleItems(view).map((task) => task.id),
+            );
+            const expanded = this.expandedByView.get(view)!;
+            for (const taskId of expanded)
+                if (!visibleIds.has(taskId)) expanded.delete(taskId);
         }
     }
 

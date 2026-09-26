@@ -3,6 +3,10 @@ import { RpcRequest, RpcResponse, VikunjaRpcMethod } from "../../shared/rpc.js";
 import { PublicError, publicError } from "../../shared/errors.js";
 import { TaskDetail, TaskSummary } from "../../shared/task.js";
 
+function isWritable(permission: TaskDetail["maxPermission"]): boolean {
+    return permission === "write" || permission === "admin" || permission === "owner";
+}
+
 interface ControllerLike {
     call: <K extends VikunjaRpcMethod>(
         method: K,
@@ -142,9 +146,19 @@ export class TaskDetailStore {
     }
 
     async toggleDoneForTask(taskId: number, done: boolean): Promise<void> {
-        if (this.currentTaskId !== undefined && this.currentTaskId !== taskId)
-            return;
-        await this.toggleDone(done);
+        this.toggleQueue = this.toggleQueue.then(
+            () => this.performToggleForTask(taskId, done),
+            () => this.performToggleForTask(taskId, done),
+        );
+        return this.toggleQueue;
+    }
+
+    async linkChild(childTaskId: number): Promise<boolean> {
+        return this.changeRelation("vikunja.tasks.linkChild", childTaskId);
+    }
+
+    async unlinkChild(childTaskId: number): Promise<boolean> {
+        return this.changeRelation("vikunja.tasks.unlinkChild", childTaskId);
     }
 
     destroy(): void {
@@ -216,6 +230,115 @@ export class TaskDetailStore {
         this.notify();
     }
 
+    private async performToggleForTask(
+        taskId: number,
+        done: boolean,
+    ): Promise<void> {
+        if (this.destroyed || !this.detail || this.state.status === "offline")
+            return;
+        const parent = this.detail;
+        if (!isWritable(parent.maxPermission)) return;
+        const child = parent.childTasks.find((candidate) => candidate.id === taskId);
+        if (!child) {
+            if (parent.id === taskId) {
+                await this.performToggle(done);
+                return;
+            }
+            return;
+        }
+        const operationGeneration = this.generation;
+        this.state = { status: "saving", error: undefined };
+        this.notify();
+        let result: Awaited<ReturnType<ControllerLike["call"]>>;
+        try {
+            result = await this.controller.call("vikunja.tasks.patch", {
+                taskId,
+                patch: { done },
+                expected: {},
+            });
+        } catch {
+            result = {
+                ok: false,
+                error: publicError(
+                    "NETWORK_ERROR",
+                    "Unable to save task",
+                    true,
+                    "retry",
+                ),
+            };
+        }
+        if (this.isStale(operationGeneration) || this.detail?.id !== parent.id)
+            return;
+        if (!result.ok) {
+            this.state = {
+                status: result.error.retryable ? "offline" : "error",
+                error: result.error,
+            };
+            this.notify();
+            return;
+        }
+        // SAFETY: this is the tasks.patch response for the exact child task ID.
+        const saved = result.data as unknown as TaskDetail;
+        this.detail = {
+            ...parent,
+            childTasks: parent.childTasks.map((item) =>
+                item.id === taskId ? { ...item, done: saved.done === true } : item,
+            ),
+        };
+        this.state = { status: "ready", error: undefined };
+        this.notify();
+    }
+
+    private async changeRelation(
+        method: "vikunja.tasks.linkChild" | "vikunja.tasks.unlinkChild",
+        childTaskId: number,
+    ): Promise<boolean> {
+        const parent = this.detail;
+        if (
+            this.destroyed || !parent || this.state.status === "offline" ||
+            !isWritable(parent.maxPermission) ||
+            !Number.isSafeInteger(childTaskId) || childTaskId <= 0 ||
+            childTaskId === parent.id
+        )
+            return false;
+        const operationGeneration = this.generation;
+        this.state = { status: "saving", error: undefined };
+        this.notify();
+        let result: Awaited<ReturnType<ControllerLike["call"]>>;
+        try {
+            result = await this.controller.call(method, {
+                parentTaskId: parent.id,
+                childTaskId,
+            } as never);
+        } catch {
+            result = {
+                ok: false,
+                error: publicError(
+                    "NETWORK_ERROR",
+                    "Unable to update task relation",
+                    true,
+                    "retry",
+                ),
+            };
+        }
+        if (this.isStale(operationGeneration) || this.detail?.id !== parent.id)
+            return false;
+        if (!result.ok) {
+            this.state = {
+                status: result.error.retryable ? "offline" : "error",
+                error: result.error,
+            };
+            this.notify();
+            return false;
+        }
+        // SAFETY: both relation RPC methods return the authoritative parent TaskDetail.
+        const authoritative = result.data as unknown as TaskDetail;
+        this.detail = authoritative;
+        this.state = { status: "ready", error: undefined };
+        this.notify();
+        return true;
+    }
+
     private isStale(generation: number): boolean {
         return this.destroyed || generation !== this.generation;
     }
@@ -229,6 +352,8 @@ function offlineDetail(snapshot: TaskSummary): TaskDetail {
     return {
         ...snapshot,
         done: snapshot.done === true,
+        parentTasks: [],
+        childTasks: [],
         descriptionMarkdown: "",
         reminders: [],
         repeat: { kind: "none" },

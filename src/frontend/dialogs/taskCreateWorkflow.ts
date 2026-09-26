@@ -1,5 +1,18 @@
+export class TaskRelationFollowUpError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "TaskRelationFollowUpError";
+    }
+}
+
 export class TaskFollowUpError extends Error {
-    constructor(cause: unknown) {
+    constructor(
+        readonly taskId: number,
+        cause: unknown,
+        readonly kind: "relation" | "other" = cause instanceof TaskRelationFollowUpError
+            ? "relation"
+            : "other",
+    ) {
         super(cause instanceof Error ? cause.message : "Task follow-up failed");
         this.name = "TaskFollowUpError";
     }
@@ -24,7 +37,7 @@ export function createTaskSaveOnce(
         try {
             await followUp(createdTaskId);
         } catch (error) {
-            throw new TaskFollowUpError(error);
+            throw new TaskFollowUpError(createdTaskId, error);
         }
         return createdTaskId;
     };

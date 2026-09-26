@@ -17,6 +17,8 @@ const i18n: TaskRowI18n = {
     assigneesSummary: (assignees) => assignees.join(", "),
     attachmentCount: (count) => `${count} attachments`,
     blockCount: (count) => `${count} blocks`,
+    expandChildren: "Expand subtasks",
+    collapseChildren: "Collapse subtasks",
 };
 
 function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {

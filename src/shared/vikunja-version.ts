@@ -40,6 +40,6 @@ export function isWriteCapableVersion(
         return true;
     }
     const parsed = parseVikunjaVersion(value);
-    if (!parsed) return false;
+    if (!parsed || parsed[0] !== 2) return false;
     return compareTriple(parsed, MINIMUM_WRITE_VERSION) >= 0;
 }

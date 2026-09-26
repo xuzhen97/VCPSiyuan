@@ -20,6 +20,8 @@ function detail(overrides: Partial<TaskDetail> = {}): TaskDetail {
         reminders: [],
         repeat: { kind: "none" },
         attachments: [],
+        parentTasks: [],
+        childTasks: [],
         maxPermission: "write",
         etag: '"v1"',
         ...overrides,
@@ -159,6 +161,53 @@ describe("TaskDetailStore", () => {
         });
         await store.toggleDone(true);
         expect(call).toHaveBeenCalledTimes(1);
+    });
+
+    it("links and unlinks a child through the current parent and adopts authoritative details", async () => {
+        const authoritative = detail({
+            childTasks: [{ id: 33, title: "Saved child", done: false, projectId: 7 }],
+            updatedAt: "v2",
+        });
+        const controller = {
+            call: vi.fn().mockResolvedValue({ ok: true, data: authoritative }),
+        };
+        const store = new TaskDetailStore({ controller: controller as never });
+        store.setDetail(detail());
+        await expect(store.linkChild(33)).resolves.toBe(true);
+        expect(controller.call).toHaveBeenNthCalledWith(1, "vikunja.tasks.linkChild", {
+            parentTaskId: 1,
+            childTaskId: 33,
+        });
+        expect(store.getDetail()?.childTasks).toEqual(authoritative.childTasks);
+        await store.unlinkChild(33);
+        expect(controller.call).toHaveBeenNthCalledWith(2, "vikunja.tasks.unlinkChild", {
+            parentTaskId: 1,
+            childTaskId: 33,
+        });
+    });
+
+    it("completes the selected direct child by its own task ID", async () => {
+        const controller = {
+            call: vi.fn().mockResolvedValue({ ok: true, data: detail() }),
+        };
+        const store = new TaskDetailStore({ controller: controller as never });
+        store.setDetail(detail({
+            childTasks: [{ id: 33, title: "Child", done: false, projectId: 7 }],
+        }));
+        await store.toggleDoneForTask(33, true);
+        expect(controller.call).toHaveBeenCalledWith("vikunja.tasks.patch", {
+            taskId: 33,
+            patch: { done: true },
+            expected: {},
+        });
+    });
+
+    it("refuses relation writes from a read-only offline detail", async () => {
+        const call = vi.fn();
+        const store = new TaskDetailStore({ controller: { call } as never });
+        store.setDetail(detail({ maxPermission: "read" }));
+        await expect(store.linkChild(33)).resolves.toBe(false);
+        expect(call).not.toHaveBeenCalled();
     });
 
     it("does not apply a response after destroy", async () => {

@@ -68,9 +68,21 @@ export interface TaskSummary {
     projectId?: number | null;
     /** @deprecated Legacy v1 field. */
     description?: string;
+    /** Direct relationship IDs as reported by Vikunja; omitted by legacy callers. */
+    parentTaskIds?: number[];
+    childTaskIds?: number[];
+}
+
+export interface TaskRelationRef {
+    id: number;
+    title: string;
+    done: boolean;
+    projectId: number | null;
 }
 
 export interface TaskDetail extends TaskSummary {
+    parentTasks: TaskRelationRef[];
+    childTasks: TaskRelationRef[];
     descriptionMarkdown: string;
     reminders: Reminder[];
     repeat: RepeatRule;
@@ -111,6 +123,12 @@ export interface Versioned<T> {
     value: T;
     etag?: string;
     updatedAt: string;
+}
+
+export interface TaskSearchQuery {
+    query: string;
+    page: number;
+    perPage: number;
 }
 
 export interface TaskQuery {

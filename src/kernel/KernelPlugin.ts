@@ -10,6 +10,7 @@ import { ProjectService } from "./services/ProjectService.js";
 import { LabelService } from "./services/LabelService.js";
 import { UserService } from "./services/UserService.js";
 import { AttachmentService } from "./services/AttachmentService.js";
+import { TaskRelationService } from "./services/TaskRelationService.js";
 import { TaskGateway } from "./vikunja/TaskGateway.js";
 import { ProjectGateway } from "./vikunja/ProjectGateway.js";
 import { LabelGateway } from "./vikunja/LabelGateway.js";
@@ -71,6 +72,10 @@ export class KernelPlugin {
             writesAllowed: async (credentials) =>
                 (await capabilityInfo(credentials)).writesAllowed,
         });
+        const relations = new TaskRelationService(taskGateway, {
+            writesAllowed: async (credentials) =>
+                (await capabilityInfo(credentials)).writesAllowed,
+        });
         const projects = new ProjectService(projectGateway, taskGateway, {
             writesAllowed: async (credentials) =>
                 (await capabilityInfo(credentials)).writesAllowed,
@@ -93,6 +98,7 @@ export class KernelPlugin {
             labels,
             users,
             attachments,
+            relations,
         });
         logger.info("VCPSiyuan kernel plugin loaded");
     }

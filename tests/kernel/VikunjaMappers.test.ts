@@ -171,6 +171,44 @@ describe("task mapping", () => {
         attachments: [attachmentWire()],
     };
 
+    it("maps direct parent and child references without recursively mapping them", () => {
+        const detail = mapTaskDetail({
+            ...taskWire,
+            related_tasks: {
+                parenttask: [
+                    {
+                        id: 21,
+                        title: "Parent",
+                        done: false,
+                        project_id: 8,
+                        related_tasks: { subtask: [{ id: 5, title: "ignored" }] },
+                    },
+                ],
+                subtask: [
+                    { id: 33, title: "Child", done: true, project_id: 7 },
+                ],
+                blocking: [{ id: 44, title: "Unrelated" }],
+            },
+        });
+
+        expect(detail.parentTasks).toEqual([
+            { id: 21, title: "Parent", done: false, projectId: 8 },
+        ]);
+        expect(detail.childTasks).toEqual([
+            { id: 33, title: "Child", done: true, projectId: 7 },
+        ]);
+        expect(detail.parentTaskIds).toEqual([21]);
+        expect(detail.childTaskIds).toEqual([33]);
+    });
+
+    it("defaults absent direct relation collections to empty", () => {
+        const detail = mapTaskDetail(taskWire);
+        expect(detail.parentTasks).toEqual([]);
+        expect(detail.childTasks).toEqual([]);
+        expect(detail.parentTaskIds).toEqual([]);
+        expect(detail.childTaskIds).toEqual([]);
+    });
+
     it("normalizes null collections and zero dates", () => {
         const detail = mapTaskDetail(taskWire);
         expect(detail.reminders).toEqual([]);

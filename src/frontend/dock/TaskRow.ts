@@ -11,12 +11,17 @@ export interface TaskRowI18n {
     assigneesSummary: (assignees: string[]) => string;
     attachmentCount: (count: number) => string;
     blockCount: (count: number) => string;
+    expandChildren: string;
+    collapseChildren: string;
 }
 
 export interface TaskRowOptions {
     onOpen?: (taskId: number) => void;
     onToggleDone?: (taskId: number, done: boolean) => void;
     canComplete?: boolean;
+    hasChildren?: boolean;
+    expanded?: boolean;
+    onToggleExpand?: (expanded: boolean) => void;
 }
 
 export function createTaskRow(
@@ -30,6 +35,26 @@ export function createTaskRow(
     if (task.done) row.dataset.done = "true";
     if ((task.priority ?? 0) > 0)
         row.dataset.priority = String(task.priority ?? 0);
+
+    const controls = document.createElement("div");
+    controls.className = "vcp-siyuan-dock__task-controls";
+    if (options.hasChildren && options.onToggleExpand) {
+        const expand = document.createElement("button");
+        expand.type = "button";
+        expand.className = "vcp-siyuan-dock__task-expand b3-button b3-button--text";
+        expand.dataset.action = "toggle-children";
+        expand.setAttribute("aria-expanded", String(options.expanded === true));
+        expand.setAttribute(
+            "aria-label",
+            options.expanded ? i18n.collapseChildren : i18n.expandChildren,
+        );
+        expand.textContent = options.expanded ? "▾" : "▸";
+        expand.addEventListener("click", (event) => {
+            event.stopPropagation();
+            options.onToggleExpand?.(options.expanded !== true);
+        });
+        controls.append(expand);
+    }
 
     // A native checkbox keeps completion keyboard- and screen-reader-visible;
     // the host's primary-button skin made it read as a coloured status dot.
@@ -50,6 +75,7 @@ export function createTaskRow(
     completion.addEventListener("change", () => {
         options.onToggleDone?.(task.id, completion.checked);
     });
+    controls.append(completion);
 
     const body = document.createElement("div");
     body.className = "vcp-siyuan-dock__task-body";
@@ -133,6 +159,6 @@ export function createTaskRow(
         options.onOpen?.(task.id);
     });
 
-    row.append(completion, body, detail);
+    row.append(controls, body, detail);
     return row;
 }

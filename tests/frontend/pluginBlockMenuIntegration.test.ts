@@ -82,6 +82,8 @@ describe("VCPSiyuanPlugin Block Menu integration", () => {
                         title: "Existing task",
                         done: false,
                         descriptionMarkdown: "",
+                        parentTasks: [],
+                        childTasks: [],
                         maxPermission: "write",
                     },
                 },

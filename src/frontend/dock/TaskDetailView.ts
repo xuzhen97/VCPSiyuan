@@ -35,6 +35,12 @@ export interface TaskDetailViewI18n {
     blockOpen: string;
     blockUnknown: string;
     blockCount: (count: number) => string;
+    parents: string;
+    children: string;
+    createChild: string;
+    linkChild: string;
+    unlinkChild: string;
+    openRelated: string;
     permissionReadOnly: string;
     repeatNone: string;
     repeatEvery: (every: number, unit: string) => string;
@@ -42,7 +48,6 @@ export interface TaskDetailViewI18n {
     attachmentList: AttachmentListI18n;
     formatDate: (value: string) => string;
 }
-
 export interface TaskDetailViewOptions {
     task: TaskDetail;
     i18n: TaskDetailViewI18n;
@@ -60,6 +65,11 @@ export interface TaskDetailViewOptions {
     canUploadAttachments?: boolean;
     canDeleteAttachments?: boolean;
     onBlockOpen?: (blockId: string) => void;
+    onOpenRelated?: (taskId: number) => void;
+    onToggleChild?: (taskId: number, done: boolean) => void;
+    onCreateChild?: () => void;
+    onLinkChild?: () => void;
+    onUnlinkChild?: (taskId: number) => void;
     attachments?: AttachmentItem[];
     attachmentsEnabled?: boolean;
     attachmentLimitBytes?: number;
@@ -219,9 +229,9 @@ export class TaskDetailView {
             status,
             projectMeta,
             meta,
-            descriptionHeading,
-            description,
         );
+        this.renderRelations(root);
+        root.append(descriptionHeading, description);
         this.renderAttachments(root);
         this.renderBlocks(root);
         if (this.options.error) {
@@ -241,6 +251,71 @@ export class TaskDetailView {
             root.append(error);
         }
         this.container.append(root);
+    }
+
+    private renderRelations(root: HTMLElement): void {
+        const { i18n } = this.options;
+        const task = this.currentTask;
+        const writable = isWritable(task.maxPermission) && this.options.saving !== true;
+        const section = document.createElement("section");
+        section.className = "vcp-siyuan-task-detail__relations";
+
+        const parentsHeading = document.createElement("h3");
+        parentsHeading.textContent = i18n.parents;
+        section.append(parentsHeading);
+        if (task.parentTasks.length === 0) {
+            const empty = document.createElement("p");
+            empty.textContent = i18n.blockUnknown;
+            section.append(empty);
+        }
+        for (const parent of task.parentTasks) {
+            const row = document.createElement("div");
+            row.className = "vcp-siyuan-task-detail__relation vcp-siyuan-task-detail__relation--parent";
+            row.dataset.taskId = String(parent.id);
+            const title = document.createElement("span");
+            title.textContent = `#${parent.id} · ${parent.title}`;
+            const open = this.button(i18n.openRelated, `open-related-${parent.id}`, "b3-button b3-button--text");
+            open.addEventListener("click", () => this.options.onOpenRelated?.(parent.id));
+            row.append(title, open);
+            section.append(row);
+        }
+
+        const childrenHeading = document.createElement("h3");
+        childrenHeading.textContent = i18n.children;
+        section.append(childrenHeading);
+        for (const child of task.childTasks) {
+            const row = document.createElement("div");
+            row.className = "vcp-siyuan-task-detail__relation vcp-siyuan-task-detail__relation--child";
+            row.dataset.taskId = String(child.id);
+            const completion = document.createElement("input");
+            completion.type = "checkbox";
+            completion.className = "vcp-siyuan-task-detail__relation-complete";
+            completion.checked = child.done;
+            completion.dataset.action = `complete-child-${child.id}`;
+            completion.setAttribute("aria-label", `${child.done ? i18n.reopen : i18n.complete}: ${child.title}`);
+            completion.disabled = !writable || this.options.onToggleChild === undefined;
+            completion.addEventListener("change", () => this.options.onToggleChild?.(child.id, completion.checked));
+            const title = document.createElement("span");
+            title.textContent = `#${child.id} · ${child.title}`;
+            const open = this.button(i18n.openRelated, `open-related-${child.id}`, "b3-button b3-button--text");
+            open.addEventListener("click", () => this.options.onOpenRelated?.(child.id));
+            const unlink = this.button(i18n.unlinkChild, `unlink-child-${child.id}`, "b3-button b3-button--text");
+            unlink.disabled = !writable || this.options.onUnlinkChild === undefined;
+            unlink.addEventListener("click", () => this.options.onUnlinkChild?.(child.id));
+            const actions = document.createElement("div");
+            actions.className = "vcp-siyuan-task-detail__relation-actions";
+            actions.append(open, unlink);
+            row.append(completion, title, actions);
+            section.append(row);
+        }
+        const create = this.button(i18n.createChild, "create-child", "b3-button b3-button--outline");
+        create.disabled = !writable || this.options.onCreateChild === undefined;
+        create.addEventListener("click", () => this.options.onCreateChild?.());
+        const link = this.button(i18n.linkChild, "link-child", "b3-button b3-button--text");
+        link.disabled = !writable || this.options.onLinkChild === undefined;
+        link.addEventListener("click", () => this.options.onLinkChild?.());
+        section.append(create, link);
+        root.append(section);
     }
 
     private renderAttachments(root: HTMLElement): void {

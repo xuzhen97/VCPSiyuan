@@ -5,7 +5,51 @@ import { TaskDialogStore } from "../../src/frontend/stores/TaskDialogStore.js";
 import { AttachmentStore } from "../../src/frontend/stores/AttachmentStore.js";
 import { taskDialogI18n } from "../helpers/pluginI18n.js";
 
+import {
+    TaskFollowUpError,
+    TaskRelationFollowUpError,
+} from "../../src/frontend/dialogs/taskCreateWorkflow.js";
+
 describe("TaskDialog", () => {
+    it("offers retry-link and open-created-task after a follow-up failure without resubmitting create", async () => {
+        const store = TaskDialogStore.create({ projectId: 2 });
+        store.setField("title", "Child task");
+        const onSave = vi.fn().mockRejectedValue(
+            new TaskFollowUpError(
+                33,
+                new TaskRelationFollowUpError("link failed"),
+            ),
+        );
+        const onRetryFollowUp = vi.fn().mockResolvedValue(undefined);
+        const onOpenCreatedTask = vi.fn();
+        const onClose = vi.fn();
+        const dialog = new TaskDialog({
+            store,
+            onSave,
+            onClose,
+            title: "Create subtask",
+            i18n: taskDialogI18n,
+            onRetryFollowUp,
+            onOpenCreatedTask,
+            taskFollowUpFailure: true,
+        });
+        const host = document.createElement("div");
+        dialog.mount(host);
+        host.querySelector<HTMLFormElement>("form")!.dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+        );
+        await vi.waitFor(() => expect(host.textContent).toContain("33"));
+        expect(host.querySelector<HTMLButtonElement>("form button[type='submit']")).toBeNull();
+        host.querySelector<HTMLButtonElement>("[data-action='open-created-task']")!.click();
+        expect(onOpenCreatedTask).toHaveBeenCalledWith(33);
+        expect(onSave).toHaveBeenCalledTimes(1);
+
+        host.querySelector<HTMLButtonElement>("[data-action='retry-follow-up']")!.click();
+        await vi.waitFor(() => expect(onRetryFollowUp).toHaveBeenCalledWith(33));
+        expect(onSave).toHaveBeenCalledTimes(1);
+        expect(onClose).toHaveBeenCalled();
+    });
+
     it("requires a title and renders a safe native form", () => {
         const store = TaskDialogStore.create({ projectId: 2 });
         const onSave = vi.fn();
@@ -319,6 +363,8 @@ describe("TaskDialog", () => {
             reminders: [],
             repeat: { kind: "none" as const },
             attachments: [],
+            parentTasks: [],
+            childTasks: [],
             maxPermission: "write" as const,
         };
         const onReload = vi.fn();
